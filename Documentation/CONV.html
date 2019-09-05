@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | CONV</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>CONV (Conversion Instruction)</h1>
+  <p>CONV is instruction 8 and instructs the processor to convert between different types as specified in the following byte.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>Input</li>
+    </ul>
+    <span>->CONV-></span>
+    <ul class="stack">
+      <li>Output</li>
+    </ul>
+  </div>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Bit #</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Meaning</td>
+        <td colspan="4">Type Output</td>
+        <td colspan="4">Type Input</td>
+      </tr>
+    </tbody>
+  </table>
+  <p> A table mapping each type to its corresponding type code is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Full Typename</th>
+        <th>abrv</th>
+        <th>BitCode</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1 byte UInt</td>
+        <td>ui1</td>
+        <td>0b0000 (0x0)</td>
+      </tr>
+      <tr>
+        <td>1 byte SInt</td>
+        <td>si1</td>
+        <td>0b0001 (0x1)</td>
+      </tr>
+      <tr>
+        <td>2 byte UInt</td>
+        <td>ui2</td>
+        <td>0b0010 (0x2)</td>
+      </tr>
+      <tr>
+        <td>2 byte SInt</td>
+        <td>si2</td>
+        <td>0b0011 (0x3)</td>
+      </tr>
+      <tr>
+        <td>4 byte UInt</td>
+        <td>ui4</td>
+        <td>0b0100 (0x4)</td>
+      </tr>
+      <tr>
+        <td>4 byte SInt</td>
+        <td>si4</td>
+        <td>0b0101 (0x5)</td>
+      </tr>
+      <tr>
+        <td>8 byte UInt</td>
+        <td>ui8</td>
+        <td>0b0110 (0x6)</td>
+      </tr>
+      <tr>
+        <td>8 byte SInt</td>
+        <td>si8</td>
+        <td>0b0111 (0x7)</td>
+      </tr>
+      <tr>
+        <td>2 byte float</td>
+        <td>f2</td>
+        <td>0b1000 (0x8)</td>
+      </tr>
+      <tr>
+        <td>4 byte float</td>
+        <td>f4</td>
+        <td>0b1001 (0x9)</td>
+      </tr>
+      <tr>
+        <td>8 byte float</td>
+        <td>f8</td>
+        <td>0b1010 (0xA)</td>
+      </tr>
+      <tr>
+        <td>16 byte float</td>
+        <td>f16</td>
+        <td>0b1011 (0xB)</td>
+      </tr>
+      <tr>
+        <td>RESERVED</td>
+        <td>N/A</td>
+        <td>0b1100 (0xC)</td>
+      </tr>
+      <tr>
+        <td>RESERVED</td>
+        <td>N/A</td>
+        <td>0b1101 (0xD)</td>
+      </tr>
+      <tr>
+        <td>RESERVED</td>
+        <td>N/A</td>
+        <td>0b1110 (0xE)</td>
+      </tr>
+      <tr>
+        <td>RESERVED</td>
+        <td>N/A</td>
+        <td>0b1111 (0xF)</td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

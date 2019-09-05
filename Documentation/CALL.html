@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | CALL_E</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>CALL (Call Instruction)</h1>
+  <p>CALL and RCALL are instructions 124 (0x7C) and 125 (0x7D) respectively. They instruct the processor to perform a call to the address on the stack and set the base pointer to the final stack pointer.</p>
+  <p>STACK: [8-byte addr] -> [8-byte prev bp] [8-byte address of instruction after CALL]</p>
+  <p>CALL performs an absolute call to the address (ip = addr).</p>
+  <p>RCALL performs a relative call to the address (ip += addr).</p>
+</body>
+</html>

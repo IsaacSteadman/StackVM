@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | SYSREG</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1> StackVM System Registers </h1>
+  <p>StackVM's system registers are accessed through the LOAD and STOR instructions with variant SYS_REG</p>
+  <p>
+    Interrupts: <br/>
+    &nbsp;&nbsp;15(0xF) - invalid SYSCALL
+  </p>
+  <p>
+    If a register is "Global" then the register is shared across all cores within each processor package (local to the chip) <br/>
+    If a register is "Universal" then the register is shared across all physical processors and cores <br/>
+    If a register is "Local" then the register is not shared between any cores and each core gets its own copy <br/>
+  </p>
+  <table id="registers" class="Isaac-Table">
+    <thead><tr><th>HEX_CODE</th><th>CODE_NAME</th><th>Short Description</th><th>Argument 0</th><th>Argument 1</th><th>Argument 2</th><th>Argument 3</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>0x06</td><td>INVAL_OPCODE</td><td>The Processor encountered an invalid opcode</td><td>Offending opcode</td><td>Offending opcode location</td><td></td><td></td>
+      </tr>
+      <tr>
+        <td>0x0d</td><td>PROTECT_FAULT</td><td>Page has insufficient permissions</td><td>page table pointer or 0 for Top level</td><td>index into page table that was searched</td><td>lower 3 bits contain the page table level: 0 for top level 4 for the final permission entry</td><td>virtual address</td>
+      </tr>
+      <tr>
+        <td>0x0e</td><td>PAGE_FAULT</td><td>Page not present in the page tables</td><td>page table pointer or 0 for Top level</td><td>index into page table that was searched</td><td>lower 3 bits contain the page table level: 0 for top level 4 for the final permission entry</td><td>virtual address</td>
+      </tr>
+      <tr>
+        <td>0x0F</td><td>INVAL_SYSCALL</td><td>The syscall was invalid</td><td></td><td></td><td></td><td></td>
+      </tr>
+
+      <!-- <tr><td>0x00</td><td>SYS_INFO_G</td><td>Global</td><td>Any</td><td>None</td><td>Holds Global System Infomation (Number of cores, this core's id ...)</td></tr>
+      <tr><td>0x01</td><td>SYS_INFO_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Local Processor Infomation (execution/privilege level ...)</td></tr>
+      <tr><td>0x02</td><td>TRAP_TABLE_G</td><td>Global</td><td>Any</td><td>PL1</td><td>Holds Global Trap Table</td></tr>
+      <tr><td>0x03</td><td>TRAP_TABLE_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Trap Table</td></tr>
+      <tr><td>0x04</td><td>INT_TABLE_G</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Global Interrupt Vector Table (for this processor)</td></tr>
+      <tr><td>0x05</td><td>INT_TABLE_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Interrupt Vector Table</td></tr>
+      <tr><td>0x06</td><td>SYS_MAIN_PTE</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Global Page Table Entry</td></tr>
+      <tr><td>0x07</td><td>SYS_PROC_PTE</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Page Table Entry</td></tr>
+      <tr><td>0x08</td><td>SYS_MAIN_SP</td><td>Local</td><td>PL1</td><td>PL1</td><td>Holds Main stack pointer</td></tr>-->
+    </tbody>
+  </table>
+  <h3>SYS_INFO_G</h3>
+  <table id="SYS_INFO_G" class="Isaac-Table">
+    <thead><tr><th>bits[0:15]</th><th>bits[16:31]</th><th>bits[32:63]</th></tr></thead>
+    <tbody>
+      <tr><td># of cores</td><td>this code id</td><td>RESERVED (0)</td></tr>
+    </tbody>
+  </table>
+  <h3 id="SYSREG_FLAGS">SYSREG: FLAGS</h3>
+  <table id="BITMAP_FLAGS" class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>bits[0:7]</th>
+        <th>bits[8:9]</th>
+        <th>bits[10:13]</th>
+        <th>bits[14:63]</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="#FLAGS_PRIORITY">Priority</a> (PR0 - PR255)</td>
+        <td><a href="#FLAGS_PRIV_LVL">Privilege Level</a> (PL0 - PL3)</td>
+        <td><a href="#FLAGS_VM_MEM_MODE">Virtual Memory Mode</a></td>
+        <td>RESERVED (0)</td>
+      </tr>
+    </tbody>
+  </table>
+  <div id="FLAGS_PRIORITY">
+    <h4>Priority</h4>
+    <p>
+      Priority is the value that determines whether an interrupt request <br/>
+      pre-empts the currently running thread. If the priority number <br/>
+      currently in FLAGS is greater than the priority number of the interrupt <br/>
+      request then the interrupt request initiates a "switch_to_interrupt". <br/>
+    </p>
+  </div>
+  <div id="FLAGS_PRIV_LVL">
+    <h4>Privilege Level</h4>
+    <p>
+      Privilege Level indicates the level of privilege the current thread <br/>
+      has. There are 4 privilege levels, 3 of which are intended for main <br/>
+      use (the hypervisor privilege level is not intended for main use). <br/>
+      The 4 privilege levels are as follows <br/>
+      <ul>
+      <li>
+        HYPER - Hyper visor privilege <br/>
+        &nbsp;&nbsp;&nbsp;has access to nearly all cpu registers and <br/>
+        &nbsp;&nbsp;&nbsp;memory (still is subject to RWX permissions <br/>
+        &nbsp;&nbsp;&nbsp;but hypervisor can change those permissions) <br/>
+      </li>
+      <li>
+        KERNEL - Kernel space privilege <br/>
+        &nbsp;&nbsp;&nbsp;has access to less than HYPER but still has <br/>
+        &nbsp;&nbsp;&nbsp;significant Low Level privileges and permissions <br/>
+        &nbsp;&nbsp;&nbsp;(access to FLAGS, I/O, interrupts and virtual memory) <br/>
+        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into HYPER <br/>
+      </li>
+      <li>
+        USER - User space privilege <br/>
+        &nbsp;&nbsp;&nbsp;cannot write to FLAGS except to switch to web space <br/>
+        &nbsp;&nbsp;&nbsp;cannot access I/O or interrupts without KERNEL<br/>
+        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into KERNEL <br/>
+      </li>
+      <li>
+        WEB - Web/untrusted space privilege <br/>
+        &nbsp;&nbsp;&nbsp;has the least access to resources <br/>
+        &nbsp;&nbsp;&nbsp;cannot write to any CPU registers<br/>
+        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into USER <br/>
+      </li>
+      </ul>
+    </p>
+  </div>
+  <div id="FLAGS_VM_MEM_MODE">
+    <h4>Virtual Memory Mode</h4>
+    <p>
+      List of Modes<br/>
+      &nbsp;&nbsp;Mode 0 - Virtual Memory disabled<br/>
+      &nbsp;&nbsp;Mode 1 - Virtual Memory 4 level<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;48 bit address<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;9 bits per level<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;12 bits physical direct mapped low order bits<br/>
+      &nbsp;&nbsp;Mode 2 - Virtual Memory 4 level<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;53 bit address<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;10 bits per level<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;13 bits physical direct mapped low order bits<br/>
+      &nbsp;&nbsp;Mode 3 - Virtual Memory 2 level (Legacy like 32bit 80386)<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;32 bit address<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;10 bits per level<br/>
+      &nbsp;&nbsp;&nbsp;&nbsp;12 bits physical direct mapped low order bits<br/>
+    </p>
+  </div>
+  <div style="width:100%;height:100vh"></div>
+  <script>
+    {
+      const d = document.getElementById("registers");
+      if (!(d instanceof HTMLTableElement)) throw new Error("expected table");
+      {
+        const rows = d.tBodies[0].rows
+        for (let c = 0; c < rows.length; ++c) {
+          const td = rows[c].cells[1];
+          const a = document.createElement("a");
+          a.href = "#INTERRUPT_" + td.innerText
+          a.innerText = td.innerText;
+          td.innerHTML = "";
+          td.appendChild(a);
+        }
+      }
+    }
+  </script>
+</body>
+</html>

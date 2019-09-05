@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | RET_E</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>RET_E ("Extended Return" Instruction)</h1>
+  <p>RET_E is instruction 13 (0x0D) and instructs the processor to perform a return to the address and base pointer on the stack.</p>
+  <p><strong>NOTE: This instruction sets the stack pointer to the base pointer to then retreive the return address and return base pointer</strong></p>
+  <p>STACK(not SYS): [n-bytes result] [n-byte res size] [n-byte RST_SP] ((STACK_CHANGE sp=bp)) [8-byte prev bp] [8-byte address of instruction after CALL(_E)] -> None</p>
+  <p>STACK(SYS): [n-bytes result] [n-byte size] [n-byte RST_SP] ((STACK_CHANGE sp=bp)) [8-byte prev bp] [8-byte address of instruction after CALL_E] -> None</p>
+  <p>The byte following the RET_E instruction indicates the type of return to perform.</p>
+  <p>A table representing the bits in the byte is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Bit #</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="2">Meaning</td>
+        <td>IS_SYS=0</td>
+        <td colspan="2">SzCls RST_SP</td>
+        <td colspan="2">SzCls RES Size</td>
+        <td colspan="3">TBD (All 0)</td>
+      </tr>
+      <tr class="contentious">
+        <td>IS_SYS=1</td>
+        <td colspan="7">TBD (All 0)</td>
+      </tr>
+    </tbody>
+  </table>
+  <p> A table mapping each size to its corresponding size code is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Size</th>
+        <th>BitCode</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1 byte</td>
+        <td>0b00 (0x0)</td>
+      </tr>
+      <tr>
+        <td>2 bytes</td>
+        <td>0b01 (0x1)</td>
+      </tr>
+      <tr>
+        <td>4 bytes</td>
+        <td>0b10 (0x2)</td>
+      </tr>
+      <tr>
+        <td>8 bytes</td>
+        <td>0b11 (0x3)</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>Old SYSRET description</h3>
+  <p>
+    SYSRET requires that the top of the stack contain a UInt64 that indicates
+    the number of bytes to remove from the stack. If you wanted to create
+    a No Op SYS Function, you would pop the syscall number, then
+    push 1 byte value=0 and then execute SYSRET with return size=1byte
+    since the SYSCALL sets up the stack properly for SYSRET to be executed
+    (other than syscall number).
+    
+  </p>
+  SYSCALL<br/>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li><span class="kw-type">char</span>[<span class="kw-var">num</span>] bytes on stack</li>
+      <li><span class="kw-type">UInt64</span> <span class="kw-var">num</span></li>
+      <li><span class="kw-type">UInt64</span> <span class="kw-var">sys_num</span></li>
+      <li><span class="kw-type">UInt64</span> <span class="kw-var">prev_bp</span></li>
+      <li><span class="kw-type">UInt64</span> <span class="kw-var">prev_ip</span></li><br/><br/><br/>
+      <li style="background-color: white"><span>&lt;--base pointer...stack pointer--&gt;</span></li><br/><br/><br/>
+      <li><span class="kw-type">char</span>[<span class="kw-var">num_ret</span>] bytes on stack</li>
+      <li><span class="kw-type">UInt64</span> <span class="kw-var">num_ret</span></li>
+    </ul><br/>
+    <span>->SYSRET{{stack switch and ++priv_lvl}}-></span><br/>
+    <ul class="stack">
+      <li><span class="kw-type">char</span>[<span class="kw-var">num_ret</span>] bytes on stack</li>
+      <li><span class="kw-type">UInt64</span> <span class="kw-var">num_ret</span></li>
+    </ul><br/>
+    <strong>NOTE</strong>: the base pointer and the stack pointer will be equal
+  </div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | DIV</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>DIV (Divide Instruction)</h1>
+  <p>The DIV instructions, number 72 (0x48) through 79 (0x4F), all pop 2, N byte operands off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>A</li>
+      <li>B</li>
+    </ul>
+    <span>->DIV-></span>
+    <ul class="stack">
+      <li>Result</li>
+    </ul>
+  </div>
+  <p>The first operand popped off the stack is B, the second popped is A.</p>
+  <p>All variants push the an N byte unsigned integer onto the stack that represents the equivalent C expression: A / B</p>
+  <p>DIV1(S) works on a 8 bit integer (N = 1 byte).</p>
+  <p>DIV2(S) works on a 16 bit integer (N = 2 bytes).</p>
+  <p>DIV4(S) works on a 32 bit integer (N = 4 bytes).</p>
+  <p>DIV8(S) works on a 64 bit integer (N = 8 bytes).</p>
+  <p>DIV1 is assigned opcode 72 (0x48).</p>
+  <p>DIV1S is assigned opcode 73 (0x49).</p>
+  <p>DIV2 is assigned opcode 74 (0x4A).</p>
+  <p>DIV2S is assigned opcode 75 (0x4B).</p>
+  <p>DIV4 is assigned opcode 76 (0x4C).</p>
+  <p>DIV4S is assigned opcode 77 (0x4D).</p>
+  <p>DIV8 is assigned opcode 78 (0x4E).</p>
+  <p>DIV8S is assigned opcode 79 (0x4F).</p>
+</body>
+</html>

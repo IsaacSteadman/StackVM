@@ -1,0 +1,9 @@
+[bytes on stack] [number of bytes on stack] [syscall number] -> syscall
+{{stack switch}}
+[bytes on stack] [number of bytes on stack] [syscall number] [prev base pointer] [prev instruction pointer]
+                                                                                                           ^^^base pointer
+.....
+[bytes on stack] [number of bytes on stack] [syscall number] [prev base pointer] [prev instruction pointer] [bytes to return] [number of bytes to return] -> sysret
+                                                                                                           ^ base pointer                  Stack pointer ^
+{{stack switch}}
+-> [bytes from sysret] [number of bytes from sysret]

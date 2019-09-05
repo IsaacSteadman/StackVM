@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | CALL_E</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>CALL_E ("Extended Call" Instruction)</h1>
+  <p>CALL_E is instruction 12 (0x0C) and instructs the processor to perform a call to the address on the stack and set the base pointer to the final stack pointer.</p>
+  <p>STACK: [8-byte addr] -> [8-byte prev bp] [8-byte address of instruction after CALL_E]</p>
+  <p>The byte following the CALL_E instruction indicates the type of call to perform.</p>
+  <p>A table representing the bits in the byte is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Bit #</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="2">Meaning</td>
+        <td>IS_SYS=0</td>
+        <td>IS_REL</td>
+        <td colspan="6">TBD (All 0)</td>
+      </tr>
+      <tr class="contentious">
+        <td>IS_SYS=1</td>
+        <td colspan="2">SYS# SzCls</td>
+        <!--<td colspan="2">nArg Bytes SzCls</td>-->
+        <td colspan="5">TBD (All 0)</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>IS_REL=0 performs an absolute call to the address (ip = addr).</p>
+  <p>IS_REL=1 performs a relative call to the address (ip += addr).</p>
+  <p> A table mapping each size to its corresponding size code is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Size</th>
+        <th>BitCode</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1 byte</td>
+        <td>0b00 (0x0)</td>
+      </tr>
+      <tr>
+        <td>2 bytes</td>
+        <td>0b01 (0x1)</td>
+      </tr>
+      <tr>
+        <td>4 bytes</td>
+        <td>0b10 (0x2)</td>
+      </tr>
+      <tr>
+        <td>8 bytes</td>
+        <td>0b11 (0x3)</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    SYSCALL<br/>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li><span class="kw-type">UInt8</span>[<span class="kw-var">num</span>] bytes on stack</li>
+        <li><span class="kw-type">UInt64</span> <span class="kw-var">num</span></li>
+        <li>
+          <span class="kw-type">UInt8</span>
+          |<span class="kw-type">UInt16</span>
+          |<span class="kw-type">UInt32</span>
+          |<span class="kw-type">UInt64</span>
+          <span class="kw-var">sys_num</span>
+          &nbsp;
+        </li>
+      </ul>
+      <span>->SYSCALL{{stack switch and --priv_lvl}}-></span>
+      <ul class="stack">
+        <li><span class="kw-type">UInt8</span>[<span class="kw-var">num</span>] bytes on stack</li>
+        <li><span class="kw-type">UInt64</span> <span class="kw-var">num</span></li>
+        <li><span class="kw-type">UInt64</span> <span class="kw-var">sys_num</span></li>
+        <li><span class="kw-type">UInt64</span> <span class="kw-var">prev_bp</span></li>
+        <li><span class="kw-type">UInt64</span> <span class="kw-var">prev_ip</span></li>
+      </ul><br/>
+      <strong>NOTE</strong>: the base pointer and the stack pointer will be equal
+    </div><br/>
+    &nbsp;&nbsp;requires syscall number to be passed on the stack<br/>
+    &nbsp;&nbsp;requires number of bytes from this stack to be passed on the stack<br/>
+    &nbsp;&nbsp;when the target executes, the stack will contain the following:<br/>
+    <ul>
+      <li>syscall number as a UInt64</li>
+      <li>number of bytes passed as a UInt64</li>
+      <li>the bytes passed from the source stack</li>
+    </ul>
+  </p>
+</body>
+</html>

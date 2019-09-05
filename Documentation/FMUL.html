@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | FMUL</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>FMUL ("Floating Point Multiply" Instruction)</h1>
+  <p>The FMUL instructions, number 104 (0x68) through 107 (0x6B), all pop 2, N byte operands off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>A</li>
+      <li>B</li>
+    </ul>
+    <span>->FMUL-></span>
+    <ul class="stack">
+      <li>Result</li>
+    </ul>
+  </div>
+  <p>The first operand popped off the stack is B, the second popped is A.</p>
+  <p>All variants push a N byte float onto the stack that represents the equivalent C expression: A * B</p>
+  <p>FMUL2 works on a 16 bit float (N = 2 bytes).</p>
+  <p>FMUL4 works on a 32 bit float (N = 4 bytes).</p>
+  <p>FMUL8 works on a 64 bit float (N = 8 bytes).</p>
+  <p>FMUL16 works on a 128 bit float (N = 16 bytes).</p>
+  <p>FMUL2 is assigned opcode 104 (0x68).</p>
+  <p>FMUL4 is assigned opcode 105 (0x69).</p>
+  <p>FMUL8 is assigned opcode 106 (0x6A).</p>
+  <p>FMUL16 is assigned opcode 107 (0x6B).</p>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Set</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+    <h1> StackVM Paged Memory Model </h1>
+    <p>
+        Common abreviations in this document:<br/>
+        - PTE: Page Table Entry
+    </p>
+    <p>StackVM implementations which support paged memory will indicate this with a flag in the SYS_INFO_G system register</p>
+    <p>
+        When a page walk is initiated, there are a few possible errors that may occur.
+        One such error is that the final page table entry (the one that points to the physical memory of the page) does not have the correct permission bits.
+        Another error is that one of the page table entries encountered along the walk was invalid.
+            This may not be an error for example if the kernel is trying to store data
+            to memory in userspace through a pointer that was passed through a syscall
+            In this case we do not want a Page Fault to result from this so the page walker needs to return how the error occured
+    </p>
+    <p>
+        The StackVM paged memory models can be enabled with the appropriate flag in the SYS_MAIN_PTE system register. <br/>
+        When paged memory is enabled the physical memmory address of the top level PTE is stored in SYS_MAIN_PTE.<br/>
+        The most supported modes for virtual memory are 4 level page table systems. <br/>
+        The one most like intel x86-64 is defined below:<br/>
+        - the page size is 4KiB, 2MiB or 1GiB<br/>
+        - The upper 52 bits of the physical address of the top level page table is PML4 = SYS_MAIN_PTE[63:12]<br/>
+        - All PTEs are 8 bytes in size and contain a 52 bit pointer to the next frame<br/>
+        - A virtual address ADDR is translated to a physical one as follows: <br/>
+        - using 9 bits to index each page table entry<br/>
+        - pte_4_ptr = (SYS_MAIN_PTE &amp; PTE_MASK) + ADDR[47:39]<br/>
+        - pte_4 = M[pte_4_ptr] &amp; PTE_MASK<br/>
+        - pte_3_ptr = pte_4 + ADDR[38:30]<br/>
+        - pte_3 = M[pte_3_ptr] &amp; PTE_MASK<br/>
+        - pte_2_ptr = pte_3 + ADDR[29:21]<br/>
+        - pte_2 = M[pte_2_ptr] &amp; PTE_MASK<br/>
+        - pte_1_ptr = pte_2 + ADDR[20:12]<br/>
+        - pte_1 = M[pte_1_ptr] &amp; PTE_MASK<br/>
+        - physical address = pte_1 + ADDR[11:0]<br/>
+        The next 4 level virtual memory mode is defined below:<br/>
+        - the page size is 8KiB, 8MiB or 8GiB<br/>
+        - The upper 51 bits of the physical address of the top level page table is PML4 = SYS_MAIN_PTE[63:13]<br/>
+        - All PTEs are 8 bytes in size and contain a 51 bit pointer to the next frame<br/>
+        - A virtual address ADDR is translated to a physical one as follows: <br/>
+        - using 10 bits to index each page table entry<br/>
+        - pte_4_ptr = (SYS_MAIN_PTE &amp; PTE_MASK) + ADDR[52:43]<br/>
+        - pte_4 = M[pte_4_ptr] &amp; PTE_MASK<br/>
+        - pte_3_ptr = pte_4 + ADDR[42:33]<br/>
+        - pte_3 = M[pte_3_ptr] &amp; PTE_MASK<br/>
+        - pte_2_ptr = pte_3 + ADDR[32:23]<br/>
+        - pte_2 = M[pte_2_ptr] &amp; PTE_MASK<br/>
+        - pte_1_ptr = pte_2 + ADDR[22:13]<br/>
+        - pte_1 = M[pte_1_ptr] &amp; PTE_MASK<br/>
+        - physical address = pte_1 + ADDR[12:0]<br/>
+        BEGIN NOTES:<br/>
+        &nbsp;&nbsp;There are 8 modes for paging<br/>
+        &nbsp;&nbsp;- 0: no paging - paging is disabled<br/>
+        &nbsp;&nbsp;- 1: single level paging using 4KiB/4MiB (top level PTE using)<br/>
+        &nbsp;&nbsp;Every PTE is defined by the following 64-bit structure<br/>
+        &nbsp;&nbsp;- bits [12,64) indicate the upper [12,64) bits of the physical memory address<br/>
+        &nbsp;&nbsp;- bit 11 is 0 for another size of page and 1 for a 4 KiB page<br/>
+        &nbsp;&nbsp;- bits [6,11) indicate the anti-age (31 is youngest, 0 is oldest)<br/>
+        &nbsp;&nbsp;- bits [4,6) are the 2 protection bits (minimum privelege level required to read from page)<br/>
+        &nbsp;&nbsp;- bit 3 is the executable bit<br/>
+        &nbsp;&nbsp;- bit 2 is the user writable bit<br/>
+        &nbsp;&nbsp;- bit 1 is the written bit<br/>
+        &nbsp;&nbsp;- bit 0 is the valid bit<br/>
+        &nbsp;&nbsp;let the lowest 1 bit be bit n starting from n = 11 and increasing<br/>
+        &nbsp;&nbsp;then 2^(n + 1) indicates the size of the page in bytes<br/>
+        &nbsp;&nbsp;for bit 11 = 1, n = 11, so page size = 2^(11 + 1) = 2^12 = 4096 = 4KiB<br/>
+        &nbsp;&nbsp;for lowest 1 bit be 12, page size = 8KiB<br/>
+        &nbsp;&nbsp;for lowest 1 bit be 21, page size = 4MiB<br/>
+        &nbsp;&nbsp;for lowest 1 bit be 22, page size = 8MiB<br/>
+        &nbsp;&nbsp;for lowest 1 bit be 28, page size = 512MiB or 64Mi(PTE)<br/>
+        &nbsp;&nbsp;for lowest 1 bit be 28, page size = 512MiB or 64Mi(PTE)<br/>
+        &nbsp;&nbsp;2^n / 8 = 2^(n - 3)<br/>
+        &nbsp;&nbsp;2^(n - 3)<br/>
+        &nbsp;&nbsp;64 - n = num left<br/>
+        &nbsp;&nbsp;a + b + c + d + n = 64<br/>
+        &nbsp;&nbsp;part A points to an PTE stored in page sized as 2^(a + 3) bytes<br/>
+        &nbsp;&nbsp;TODO: find optimal page sizing for single and multi-level paging <br/>
+        END NOTES
+    </p>
+    <p>
+        When single level paging is used for 4KiB/4MiB pages the bits for  are as follows: <br/>
+        - bits [12,64) indicate the upper [12,64) bits of the physical memory address
+        - bit 0 is 0 for another size of page and 1 for a 4 KiB page
+        - bit 1 is the valid bit
+        - bit 2 is the written bit
+        - bit 3 is the user writable bit
+        - bit 4 is the executable bit
+        - bits [5,7) are the 2 protection bits (minimum privelege level required to read from page)
+        - bits [7,12) indicate the anti-age (31 is youngest, 0 is oldest)
+    </p>
+    <p>
+        When 2 level paging is used for 4KiB/4MiB pages the bits for the top level PTE are as follows: <br/>
+        - bits [12,64) indicate the bits of the physical memory address,
+        - bit 0 is the valid bit
+        - bit 1 is the written bit
+        - bits [2,4) are the 2 protection bits (minimum privelege level required to read from page)
+        - bit 4 is the user writable bit
+        - bit 5 is the executable bit
+        - bit 6 is 0 for 4 MiB pages and 1 for 4 KiB pages
+        - bits [7,12) indicate the anti-age (31 is youngest, 0 is oldest)
+        And the bits for the secondary level PTE are as follows:
+        - bits [12,64) indicate the bits of the physical memory address,
+        - bit 0 is the valid bit
+        - bit 1 is the written bit
+        - bits [2,4) are the 2 protection bits (minimum privelege level required to read from page)
+        - bit 4 is the user writable bit
+        - bit 5 is the executable bit
+        - bit 6 is 0 for a 4 MiB page and 1 for a 4 KiB page
+        - bits [7,12) indicate the anti-age (31 is youngest, 0 is oldest)
+    </p>
+</body>
+</html>

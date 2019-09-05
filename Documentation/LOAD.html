@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | LOAD</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>LOAD ("Load Data" Instruction)</h1>
+  <p>LOAD is instruction 10 (0x0A) and instructs the processor to load data onto the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>...Variant Arguments</li>
+    </ul>
+    <span>->LOAD(variant|size_class,imm-args)-></span>
+    <ul class="stack">
+      <li>Data</li>
+    </ul>
+  </div>
+  <p>The byte following the LOAD instruction indicates the size of the data, as well as the source location.</p>
+  <p>A table representing the bits in the byte is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Bit #</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Meaning</td>
+        <td colspan="3">Size</td>
+        <td colspan="5">Source</td>
+      </tr>
+    </tbody>
+  </table>
+  <p> A table mapping each "Source" to its corresponding "Source" code is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>BitCode</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="deprecated">
+        <td>ABS_A4</td>
+        <td>0b00000 (0x00)</td>
+        <td>value is at 4 byte address specified after instruction</td>
+      </tr>
+      <tr>
+        <td>ABS_A8</td>
+        <td>0b00001 (0x01)</td>
+        <td>value is at 8 byte address specified after instruction</td>
+      </tr>
+      <tr class="deprecated">
+        <td>ABS_S4</td>
+        <td>0b00010 (0x02)</td>
+        <td>value is at 4 byte address that is on the stack</td>
+      </tr>
+      <tr>
+        <td>ABS_S8</td>
+        <td>0b00011 (0x03)</td>
+        <td>value is at 8 byte address that is on the stack</td>
+      </tr>
+      <tr>
+        <td>R_BP1</td>
+        <td>0b00100 (0x04)</td>
+        <td>value is at signed address offset (as 1 bytes after instruction) to base ptr</td>
+      </tr>
+      <tr>
+        <td>R_BP2</td>
+        <td>0b00101 (0x05)</td>
+        <td>value is at signed address offset (as 2 bytes after instruction) to base ptr</td>
+      </tr>
+      <tr>
+        <td>R_BP4</td>
+        <td>0b00110 (0x06)</td>
+        <td>value is at signed address offset (as 4 bytes after instruction) to base ptr</td>
+      </tr>
+      <tr>
+        <td>R_BP8</td>
+        <td>0b00111 (0x07)</td>
+        <td>value is at signed address offset (as 8 bytes after instruction) to base ptr</td>
+      </tr>
+      <tr>
+        <td>ABS_C</td>
+        <td>0b01000 (0x08)</td>
+        <td>value is located after instruction</td>
+      </tr>
+      <tr>
+        <td>REG_BP</td>
+        <td>0b01001 (0x09)</td>
+        <td>value is in register bp <strong>NOTE: Size is ignored</strong></td>
+      </tr>
+      <tr>
+        <td>RES</td>
+        <td>0b01010 (0x0A)</td>
+        <td>value is in the result register<strong>NOTE: further explaination is below</strong></td>
+      </tr>
+      <tr>
+        <td>EA_R_IP</td>
+        <td>0b01011 (0x0B)</td>
+        <td>value is ip added to signed address offset (as [size] bytes after instruction)</td>
+      </tr>
+      <tr>
+        <td>TOS</td>
+        <td>0b01100 (0x0C)</td>
+        <td>value is at top of the stack (as [size] bytes) (DUP instruction)</td>
+      </tr>
+      <tr>
+        <td>SYSREG</td>
+        <td>0b01101 (0x0D)</td>
+        <td>value is in a System register (see <a href="SYSREG.html">SYSREG registers</a>)</td>
+      </tr>
+      <tr>
+        <td rowspan="18">RESERVED</td>
+        <td>0b01110 (0x0E)</td>
+        <td rowspan="18">reserved for future use</td>
+      </tr>
+      <tr>
+        <td>0b01111 (0x0F)</td>
+      </tr>
+      <tr>
+        <td>0b10000 (0x10)</td>
+      </tr>
+      <tr>
+        <td>0b10001 (0x11)</td>
+      </tr>
+      <tr>
+        <td>0b10010 (0x12)</td>
+      </tr>
+      <tr>
+        <td>0b10011 (0x13)</td>
+      </tr>
+      <tr>
+        <td>0b10100 (0x14)</td>
+      </tr>
+      <tr>
+        <td>0b10101 (0x15)</td>
+      </tr>
+      <tr>
+        <td>0b10110 (0x16)</td>
+      </tr>
+      <tr>
+        <td>0b10111 (0x17)</td>
+      </tr>
+      <tr>
+        <td>0b11000 (0x18)</td>
+      </tr>
+      <tr>
+        <td>0b11001 (0x19)</td>
+      </tr>
+      <tr>
+        <td>0b11010 (0x1A)</td>
+      </tr>
+      <tr>
+        <td>0b11011 (0x1B)</td>
+      </tr>
+      <tr>
+        <td>0b11100 (0x1C)</td>
+      </tr>
+      <tr>
+        <td>0b11101 (0x1D)</td>
+      </tr>
+      <tr>
+        <td>0b11110 (0x1E)</td>
+      </tr>
+      <tr>
+        <td>0b11111 (0x1F)</td>
+      </tr>
+    </tbody>
+  </table>
+  <p> A table mapping each size to its corresponding size code is displayed below.</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Size</th>
+        <th>BitCode</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1 byte</td>
+        <td>0b000 (0x0)</td>
+      </tr>
+      <tr>
+        <td>2 bytes</td>
+        <td>0b001 (0x1)</td>
+      </tr>
+      <tr>
+        <td>4 bytes</td>
+        <td>0b010 (0x2)</td>
+      </tr>
+      <tr>
+        <td>8 bytes</td>
+        <td>0b011 (0x3)</td>
+      </tr>
+      <tr class="nsm">
+        <td>16 bytes</td>
+        <td>0b100 (0x4)</td>
+      </tr>
+      <tr class="nsm">
+        <td>32 bytes</td>
+        <td>0b101 (0x5)</td>
+      </tr>
+      <tr class="nsm">
+        <td>64 bytes</td>
+        <td>0b110 (0x6)</td>
+      </tr>
+      <tr class="nsm">
+        <td>128 bytes</td>
+        <td>0b111 (0x7)</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>A Note on the RES Variant</h3>
+  <p>With RES the most significant bit of Size has a different meaning. If it is set the processor will push the result data on the stack</p>
+  <p>RES will always push the least significant [Size] bytes of ResSize of the result last (on top of the stack after the instruction executes).</p>
+</body>
+</html>

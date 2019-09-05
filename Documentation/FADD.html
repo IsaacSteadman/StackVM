@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | FADD</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>FADD ("Floating Point Add" Instruction)</h1>
+  <p>The FADD instructions, number 96 (0x60)) through 99 (0x63), all pop 2, N byte operands off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>A</li>
+      <li>B</li>
+    </ul>
+    <span>->FADD-></span>
+    <ul class="stack">
+      <li>Result</li>
+    </ul>
+  </div>
+  <p>The first operand popped off the stack is B, the second popped is A.</p>
+  <p>All variants push a N byte float onto the stack that represents the equivalent C expression: A + B</p>
+  <p>FADD2 works on a 16 bit float (N = 2 bytes).</p>
+  <p>FADD4 works on a 32 bit float (N = 4 bytes).</p>
+  <p>FADD8 works on a 64 bit float (N = 8 bytes).</p>
+  <p>FADD16 works on a 128 bit float (N = 16 bytes).</p>
+  <p>FADD2 is assigned opcode 96 (0x60).</p>
+  <p>FADD4 is assigned opcode 97 (0x61).</p>
+  <p>FADD8 is assigned opcode 98 (0x62).</p>
+  <p>FADD16 is assigned opcode 99 (0x63).</p>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | CMP</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>CMP (Compare Instruction)</h1>
+  <p>The CMP instructions, number 88 (0x58) through 95 (0x5F), all pop 2, N byte operands off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>A</li>
+      <li>B</li>
+    </ul>
+    <span>->CMP-></span>
+    <ul class="stack">
+      <li>Result</li>
+    </ul>
+  </div>
+  <p>The first operand popped off the stack is B, the second popped is A.</p>
+  <p>All variants push a 1 byte signed integer onto the stack that represents the following equivalent C expression:<br/>
+    A < B ? -1 : (A == B ? 0 : 1)</p>
+  <p>In other words, CMP pushes a negative number if A < B, a zero if A == B, or a positive number if A > B</p>
+  <p>CMP1(S) works on a 8 bit integer (N = 1 byte).</p>
+  <p>CMP2(S) works on a 16 bit integer (N = 2 bytes).</p>
+  <p>CMP4(S) works on a 32 bit integer (N = 4 bytes).</p>
+  <p>CMP8(S) works on a 64 bit integer (N = 8 bytes).</p>
+  <p>CMP1 is assigned opcode 88 (0x58).</p>
+  <p>CMP1S is assigned opcode 89 (0x59).</p>
+  <p>CMP2 is assigned opcode 90 (0x5A).</p>
+  <p>CMP2S is assigned opcode 91 (0x5B).</p>
+  <p>CMP4 is assigned opcode 92 (0x5C).</p>
+  <p>CMP4S is assigned opcode 93 (0x5D).</p>
+  <p>CMP8 is assigned opcode 94 (0x5E).</p>
+  <p>CMP8S is assigned opcode 95 (0x5F).</p>
+</body>
+</html>

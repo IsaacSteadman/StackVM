@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | ADD_SP</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>ADD_SP ("Stack Increment" Instruction)</h1>
+  <p>The ADD_SP instructions, number 56 (0x38) through 59 (0x3B), all pop 1, N byte operand off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>A</li>
+    </ul>
+    <span>->ADD_SP-></span>
+    <ul class="stack">
+      <li>NONE(Stack Changed)</li>
+    </ul>
+  </div>
+  <p>The operand popped off the stack is A, and there is nothing pushed onto the stack.</p>
+  <p>The meaning of stack increment is an addition of the stack (like a push, sp decreases).</p>
+  <p>ADD_SP1 works on an unsigned 8 bit integer (N = 1 byte).</p>
+  <p>ADD_SP2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
+  <p>ADD_SP4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
+  <p>ADD_SP8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
+  <p>ADD_SP1 is assigned opcode 56 (0x38).</p>
+  <p>ADD_SP2 is assigned opcode 57 (0x39).</p>
+  <p>ADD_SP4 is assigned opcode 58 (0x3A).</p>
+  <p>ADD_SP8 is assigned opcode 59 (0x3B).</p>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | MOD</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>MOD (Modulus Instruction)</h1>
+  <p>The MOD instructions, number 80 (0x50) through 87 (0x57), all pop 2, N byte operands off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>A</li>
+      <li>B</li>
+    </ul>
+    <span>->MOD-></span>
+    <ul class="stack">
+      <li>Result</li>
+    </ul>
+  </div>
+  <p>The first operand popped off the stack is B, the second popped is A.</p>
+  <p>All variants push the an N byte unsigned integer onto the stack that represents the equivalent C expression: A % B</p>
+  <p>MOD1(S) works on a 8 bit integer (N = 1 byte).</p>
+  <p>MOD2(S) works on a 16 bit integer (N = 2 bytes).</p>
+  <p>MOD4(S) works on a 32 bit integer (N = 4 bytes).</p>
+  <p>MOD8(S) works on a 64 bit integer (N = 8 bytes).</p>
+  <p>MOD1 is assigned opcode 80 (0x50).</p>
+  <p>MOD1S is assigned opcode 81 (0x51).</p>
+  <p>MOD2 is assigned opcode 82 (0x52).</p>
+  <p>MOD2S is assigned opcode 83 (0x53).</p>
+  <p>MOD4 is assigned opcode 84 (0x54).</p>
+  <p>MOD4S is assigned opcode 85 (0x55).</p>
+  <p>MOD8 is assigned opcode 86 (0x56).</p>
+  <p>MOD8S is assigned opcode 87 (0x57).</p>
+</body>
+</html>

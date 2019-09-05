@@ -1,0 +1,39 @@
+!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Set</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1> StackVM System Registers </h1>
+  <p>StackVM's system registers are accessed through the LOAD and STOR instructions with variant SYS_REG</p>
+  <table id="registers" class="Isaac-Table">
+    <thead><tr><th>HEX_CODE</th><th>CODE_NAME</th><th>Global/Local?</th><th>Who Can Read?</th><th>Who Can Write?</th><th>Additional Notes</th></tr></thead>
+    <tbody>
+      <tr><td>0x00</td><td>SYS_INFO_G</td><td>Global</td><td>Any</td><td>None</td><td>Holds Global System Infomation (Number of cores, this core's id ...)</td></tr>
+      <tr><td>0x01</td><td>SYS_INFO_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Local Processor Infomation (execution/privilege level ...)</td></tr>
+      <tr><td>0x02</td><td>TRAP_TABLE_G</td><td>Global</td><td>Any</td><td>PL1</td><td>Holds Global Trap Table</td></tr>
+      <tr><td>0x03</td><td>TRAP_TABLE_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Trap Table</td></tr>
+      <tr><td>0x04</td><td>INT_TABLE_G</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Global Interrupt Vector Table (for this processor)</td></tr>
+      <tr><td>0x05</td><td>INT_TABLE_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Interrupt Vector Table</td></tr>
+      <tr><td>0x06</td><td>SYS_MAIN_PTE</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Global Page Table Entry</td></tr>
+      <tr><td>0x07</td><td>SYS_PROC_PTE</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Page Table Entry</td></tr>
+      <tr><td>0x08</td><td>SYS_MAIN_SP</td><td>Local</td><td>PL1</td><td>PL1</td><td>Holds Main stack pointer</td></tr>
+    </tbody>
+  </table>
+  <h3>SYS_INFO_G</h3>
+  <table id="SYS_INFO_G" class="Isaac-Table">
+    <thead><tr><th>bits[0:15]</th><th>bits[16:31]</th><th>bits[32:63]</th></tr></thead>
+    <tbody>
+      <tr><td># of cores</td><td>this code id</td><td>RESERVED (0)</td></tr>
+    </tbody>
+  </table>
+  <h3>SYS_INFO_L</h3>
+  <table id="SYS_INFO_L" class="Isaac-Table">
+    <thead><tr><th>bits[0:5]</th><th>bits[6:8]</th><th>bits[9:63]</th></tr></thead>
+    <tbody>
+      <tr><td>Priority (P0 - P63)</td><td>Privilege Level(PL0 - PL7)</td><td>RESERVED (0)</td></tr>
+    </tbody>
+  </table>
+</body>
+</html>

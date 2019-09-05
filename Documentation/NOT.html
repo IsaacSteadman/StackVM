@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | NOT</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>NOT ("Bitwise Not" Instruction)</h1>
+  <p>The NOT instructions, number 40 (0x28) through 43 (0x2B), all pop 1, N byte operand off the stack.</p>
+  <div>
+    <h3>Stack Diagram</h3>
+    <ul class="stack">
+      <li>Input</li>
+    </ul>
+    <span>->NOT-></span>
+    <ul class="stack">
+      <li>Output</li>
+    </ul>
+  </div>
+  <p>The operand popped off the stack is A.</p>
+  <p>All variants push the an N byte unsigned integer onto the stack that represents the equivalent C expression: ~A</p>
+  <p>NOT1 works on an unsigned 8 bit integer (N = 1 byte).</p>
+  <p>NOT2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
+  <p>NOT4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
+  <p>NOT8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
+  <p>NOT1 is assigned opcode 40 (0x28).</p>
+  <p>NOT2 is assigned opcode 41 (0x29).</p>
+  <p>NOT4 is assigned opcode 42 (0x2A).</p>
+  <p>NOT8 is assigned opcode 43 (0x2B).</p>
+</body>
+</html>

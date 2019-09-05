@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StackVM Instruction Documentation | FCMP</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+</head>
+<body>
+  <h1>FCMP ("Floating Point Compare" Instruction)</h1>
+  <p>The FCMP instructions, number 116 (0x74) through 119 (0x77), all pop 2, N byte operands off the stack.</p>
+  <p>The first operand popped off the stack is B, the second popped is A.</p>
+  <p>All variants push a 1 byte signed integer onto the stack that represents the following equivalent C expression:<br/>
+    A < B ? -1 : (A == B ? 0 : 1)</p>
+  <p>In other words, CMP pushes a negative number if A < B, a zero if A == B, or a positive number if A > B</p>
+  <p>FCMP2 works on a 16 bit float (N = 2 bytes).</p>
+  <p>FCMP4 works on a 32 bit float (N = 4 bytes).</p>
+  <p>FCMP8 works on a 64 bit float (N = 8 bytes).</p>
+  <p>FCMP16 works on a 128 bit float (N = 16 bytes).</p>
+  <p>FCMP2 is assigned opcode 116 (0x74).</p>
+  <p>FCMP4 is assigned opcode 117 (0x75).</p>
+  <p>FCMP8 is assigned opcode 118 (0x76).</p>
+  <p>FCMP16 is assigned opcode 119 (0x77).</p>
+</body>
+</html>
