@@ -1020,6 +1020,11 @@ class ObjectIdAllocator(object):
         return idx
 
 
+WATCH_NONE = 0
+WATCH_EXCEPTIONAL = 1
+WATCH_WARNING = 2
+
+
 class SplitMemView(object):
     __slots__ = ["mva", "mvb", "sz"]
 
@@ -1207,6 +1212,8 @@ class VirtualMachine(object):
         self.priv_lvl = 1
         self.sys_regs[SVSR_FLAGS] = self.priority | (self.priv_lvl << 8)
         self.memory = bytearray(heap_sz + stack_sz)
+        self.watch_memory = WATCH_NONE
+        self.watch_points = []
         self.ip = 0
         self.sp = len(self.memory)
         self.bp = self.sp
@@ -1623,8 +1630,8 @@ class VirtualMachine(object):
                 self.set(4, c + 8, evt.mod)
             elif evt.type == pygame.MOUSEMOTION:
                 btns = 0
-                for b, c in enumerate(evt.buttons):
-                    btns |= b << c
+                for i, b in enumerate(evt.buttons):
+                    btns |= b << i
                 self.set(4, c + 4, btns)
                 self.set(4, c + 8, evt.pos[0])
                 self.set(4, c + 12, evt.pos[1])
@@ -1661,7 +1668,7 @@ class VirtualMachine(object):
             assert at_addr & page_mask == 0, "must load progam at page boundary"
             end = at_addr + len(memory)
             end1 = (end | page_mask) ^ page_mask
-            for addr in range(at_addr, end1):
+            for addr in range(at_addr, end1, page_size):
                 mv = self.get_mv_as_priv(self.priv_lvl, page_size, addr, MRQ_DONT_CHECK)
                 mv[:] = mem_v[addr: addr + page_size]
             if end1 != end:
@@ -1692,12 +1699,11 @@ class VirtualMachine(object):
                 elif err_code == VME_PAGE_BAD_PERMS:
                     self.trap(INT_PROTECT_FAULT, *self.virt_error_data)
                 return
-            addr = phys_addr
             page_mask = [0, 0xfffffffffffff000, 0xffffffffffffe000, 0xfffff000][vmd]
             if sz > 1 and (addr & page_mask) != ((addr + sz - 1) & page_mask):
                 index_mask = [0, 0xFFF, 0x1FFF, 0xFFF][vmd]
                 index_mask_p1 = index_mask + 1
-                addr1 = self.walk_page(addr, self.sys_regs[priv_lvl], vmd, permissions)
+                addr1 = self.walk_page(addr + index_mask_p1, self.sys_regs[priv_lvl], vmd, permissions)
                 err_code = self.virt_error_code
                 if err_code:
                     if err_code == VME_PAGE_NOT_PRESENT:
@@ -1707,17 +1713,33 @@ class VirtualMachine(object):
                     return
                 sz0 = index_mask_p1 - (addr1 & index_mask)
                 sz1 = (addr1 + sz) & index_mask
+                addr = phys_addr
                 mem = memoryview(self.memory)
                 if addr + sz0 > len(mem):
                     raise IndexError("Memory address out of bounds (Sz = %u, addr = %u)" % (sz0, addr))
                 elif addr1 + sz1 > len(mem):
                     raise IndexError("Memory address out of bounds (Sz = %u, addr = %u)" % (sz1, addr1))
+                if self.watch_memory:
+                    assert self.watch_memory == 1, "Only Exceptional watchpoints are supported"
+                    for i, (perm, pt) in enumerate(self.watch_points):
+                        if perm != permissions:
+                            continue
+                        if addr <= pt < addr + sz0 or addr1 <= pt < addr1 + sz1:
+                            raise Warning("Watchpoint %u encountered (perm = %u, pt = %u)" % (i, perm, pt))
                 return SplitMemView(mem[addr: addr + sz0], mem[addr1: addr1 + sz1])
+            addr = phys_addr
         mem = memoryview(self.memory)
         assert isinstance(addr, int)
         assert isinstance(sz, int)
         if addr + sz > len(mem):
             raise IndexError("Memory address out of bounds (Sz = %u, addr = %u)" % (sz, addr))
+        if self.watch_memory:
+            assert self.watch_memory == 1, "Only Exceptional watchpoints are supported"
+            for i, (perm, pt) in enumerate(self.watch_points):
+                if perm != permissions:
+                    continue
+                if addr <= pt < addr + sz:
+                    raise Warning("Watchpoint %u encountered (perm = %u, pt = %u)" % (i, perm, pt))
         return mem[addr: addr + sz]
 
     def get_as_priv(self, priv_lvl: int, sz: int, addr: int) -> Optional[int]:
@@ -2376,7 +2398,7 @@ def stack_vm_virt_mem_tests():
     return vm
 
 
-def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: int, def1: int, def2: int, def3: int, perms: int, dbg_prn: bool=True):
+def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: int, def1: int, def2: int, def3: int, perms: int, dbg_prn: bool=True, force_new_pte_1: bool=False):
     """
     :param vm: virtual machine
     :param virt_addr: virtual address
@@ -2436,8 +2458,10 @@ def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: 
     if pte_1 & 0xFFF != perms:
         pte_1 &= perms | PTE_MASK
         pte_1 |= perms
-    if (pte_1 & PTE_VALID_BIT) == 0:
+    if (pte_1 & PTE_VALID_BIT) == 0 or force_new_pte_1:
         pte_1 = def3 | PTE_VALID_BIT
+    else:
+        print("WARNING using existing PTE_1")
     assert pte_1 & PTE_HUGE_BIT == 0
     if pte_1_old != pte_1:
         mem[pte_1_ptr: pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
@@ -2453,6 +2477,156 @@ def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: 
             old, cur = lst_pte[c]
             print("PTE%u old: %016X new: %016X" % (4 - c, old, cur))
     return lst_new
+
+
+class AdvPageAlloc(object):
+    def __init__(self, mv: Optional[Union[memoryview, bytearray]], mn: int, mx: int, pgsize: int):
+        if mv is not None:
+            assert (mx - mn + 7) // 8 <= len(mv), "memory view is not big enough to hold allocation bits"
+            self.mv = mv
+        else:
+            self.mv = bytearray((mx - mn + 7) // 8)
+        self.mn = mn
+        self.mx = mx
+        self.pgsize = pgsize
+
+    def alloc(self) -> int:
+        r = 0
+        for i, byt in enumerate(self.mv):
+            if (i << 3) >= self.mx:
+                r = i << 3
+                break
+            if byt != 0xFF:
+                i1 = 0
+                while byt & 1:
+                    byt >>= 1
+                    i1 += 1
+                r = i1 | (i << 3)
+                if r < self.mx:
+                    self.mv[i] |= 1 << i1
+                break
+        if r >= self.mx:
+            raise ValueError("Out of allocation spots")
+        return r * self.pgsize
+
+    def free(self, n: int):
+        q, r = divmod(n, self.pgsize)
+        assert q == 0, "must be aligned to page boundaries"
+        assert self.mn <= q < self.mx, "must be within allocation range"
+        idx = q >> 3
+        bit = q & 0x7
+        mask = 0xFF ^ (1 << bit)
+        self.mv[idx] &= mask
+
+
+def insert_page_tables_1(vm: VirtualMachine, virt_addr: int, priv_lvl: int, alloc: AdvPageAlloc, perms: int, dbg_prn: bool=True, force_new_pte_1: bool=False):
+    """
+    :param vm: virtual machine
+    :param virt_addr: virtual address
+    :param priv_lvl: privilege level of the address space
+    :param alloc: an allocator with an `alloc()` method that can fail with a ValueError
+    :param perms: permissions
+    :return: list of which of the page levels were created list[0] is True if it used the addess `def0` as a new page in the hierarchy
+    """
+    if dbg_prn:
+        print("insert_page_tables(vm,\n  virt_addr = 0x%016X,\n  priv_lvl = %u,\n  alloc = %r\n  perms = %u,\n  dbg_prn = %r\n)" % (
+            virt_addr,
+            priv_lvl,
+            alloc,
+            perms,
+            dbg_prn
+        ))
+    mem = memoryview(vm.memory)
+    assert vm.virt_mem_mode == VM_4_LVL_9_BIT, "this function only supports VM_4_LVL_9_BIT"
+    if dbg_prn:
+        print("perms=", perms)
+    PTE_MASK = 0xfffffffffffff000
+    PTE_VALID_BIT = 0x001
+    PTE_HUGE_BIT = 0x010
+    acquired = []
+    from_bytes = int.from_bytes
+    try:
+        tlpte = vm.sys_regs[priv_lvl]
+        # TODO: copy the principal code of `VirtualMachine.walk_page`
+        # TODO: instead of faulting when encountering an invalid page
+        # TODO:   set the page pointer to the corresponding default the argunments to this function
+        assert (tlpte & PTE_VALID_BIT) != 0
+        pte_4_index = ((virt_addr >> 39) & 0x1ff) << 3
+        pte_4_ptr = (tlpte & PTE_MASK) | pte_4_index
+        pte_4_old = pte_4 = from_bytes(mem[pte_4_ptr:pte_4_ptr + 8], "little")
+        if (pte_4 & PTE_VALID_BIT) == 0:
+            def0 = alloc.alloc()
+            pte_4 = def0 | PTE_VALID_BIT
+            acquired.append((pte_4_ptr, pte_4_ptr + 8, def0, pte_4_old))
+            if dbg_prn:
+                print("Injecting PTE_4 0x%016X at address 0x%016X" % (pte_4, pte_4_ptr))
+            mem[pte_4_ptr: pte_4_ptr + 8] = pte_4.to_bytes(8, "little")
+        assert pte_4 & PTE_HUGE_BIT == 0
+        pte_3_index = ((virt_addr >> 30) & 0x1ff) << 3
+        pte_3_ptr = (pte_4 & PTE_MASK) | pte_3_index
+        pte_3_old = pte_3 = from_bytes(mem[pte_3_ptr:pte_3_ptr + 8], "little")
+        if (pte_3 & PTE_VALID_BIT) == 0:
+            def1 = alloc.alloc()
+            pte_3 = def1 | PTE_VALID_BIT
+            acquired.append((pte_3_ptr, pte_3_ptr + 8, def1, pte_3_old))
+            if dbg_prn:
+                print("Injecting PTE_3 0x%016X at address 0x%016X" % (pte_3, pte_3_ptr))
+            mem[pte_3_ptr: pte_3_ptr + 8] = pte_3.to_bytes(8, "little")
+        assert pte_3 & PTE_HUGE_BIT == 0
+        pte_2_index = ((virt_addr >> 21) & 0x1ff) << 3
+        pte_2_ptr = (pte_3 & PTE_MASK) | pte_2_index
+        pte_2_old = pte_2 = from_bytes(mem[pte_2_ptr:pte_2_ptr + 8], "little")
+        if (pte_2 & PTE_VALID_BIT) == 0:
+            def2 = alloc.alloc()
+            pte_2 = def2 | PTE_VALID_BIT
+            acquired.append((pte_2_ptr, pte_2_ptr + 8, def2, pte_2_old))
+            if dbg_prn:
+                print("Injecting PTE_2 0x%016X at address 0x%016X" % (pte_2, pte_2_ptr))
+            mem[pte_2_ptr: pte_2_ptr + 8] = pte_2.to_bytes(8, "little")
+        assert pte_2 & PTE_HUGE_BIT == 0
+        pte_1_index = ((virt_addr >> 12) & 0x1ff) << 3
+        pte_1_ptr = (pte_2 & PTE_MASK) | pte_1_index
+        pte_1_old = pte_1 = from_bytes(mem[pte_1_ptr:pte_1_ptr + 8], "little")
+        if (pte_1 & PTE_VALID_BIT) == 0 or force_new_pte_1:
+            def3 = alloc.alloc()
+            pte_1 = def3 | PTE_VALID_BIT | perms
+            acquired.append((pte_1_ptr, pte_1_ptr + 8, def3, pte_1_old))
+            if dbg_prn:
+                print("Injecting PTE_1 0x%016X at address 0x%016X" % (pte_1, pte_1_ptr))
+            mem[pte_1_ptr: pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
+        elif pte_1 & 0xFFF != perms:
+            pte_1 &= perms | PTE_MASK
+            pte_1 |= perms
+            mem[pte_1_ptr: pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
+            if dbg_prn:
+                print("WARNING using existing PTE_1\n  Updating PTE_1 permissions")
+        else:
+            if dbg_prn:
+                print("WARNING using existing PTE_1")
+        assert pte_1 & PTE_HUGE_BIT == 0
+        if dbg_prn:
+            lst_pte = [
+                (pte_4_old, pte_4),
+                (pte_3_old, pte_3),
+                (pte_2_old, pte_2),
+                (pte_1_old, pte_1)
+            ]
+            for c in range(len(lst_pte)):
+                old, cur = lst_pte[c]
+                if old != cur:
+                    print("PTE%u old: %016X new: %016X" % (4 - c, old, cur))
+    except ValueError:
+        if dbg_prn:
+            print("Failed to allocate, rolling back")
+            for start, end, new, old in acquired:
+                print("restoring mem[0x%016X:0x%016X] to 0x%016X" % (start, end, old))
+                mem[start: end] = old.to_bytes(end - start, "little")
+                alloc.free(new)
+        else:
+            for start, end, old in acquired:
+                mem[start: end] = old.to_bytes(end - start, "little")
+        return False
+    return True
 
 
 # insert_page_tables(vm1, 0xFFFFFFFFFFFFF000, 1, 0x6000, 0x7000, 0x8000, 0x9000, 0x6)
@@ -2542,14 +2716,18 @@ class PageAllocator(object):
         else:
             self.byts[byt_index] &= 0xFF ^ (1 << bit_index)
 
+    def __len__(self):
+        return self.max_addr
 
-def enable_virt_mem(vm: VirtualMachine, alloc: PageAllocator, priv_lvl: int, code_segment_start: int, code_segment_end: int, data_segment_start, data_segment_end: Optional[int]):
+
+def enable_virt_mem(vm: VirtualMachine, alloc: PageAllocator, priv_lvl: int, code_segment_start: int, code_segment_end: int, data_segment_start, data_segment_end: Optional[int], dbg_prn: bool=False):
     PTE_VALID_BIT = 0x001
     PTE_WRITE_BIT = 0x002
     PTE_EXEC_BIT = 0x004
     PTE_DIRTY_BIT = 0x008
     vm.set_mem_mode(VM_4_LVL_9_BIT)
     tlpte = (alloc.get_and_alloc_next_false() << 12) | PTE_VALID_BIT
+    adv_alloc = AdvPageAlloc(memoryview(alloc.byts), 0, alloc.max_addr, 4096)
     vm.sys_regs[priv_lvl] = tlpte
     assert code_segment_start & 0xFFF == 0, "page alignment"
     assert code_segment_end & 0xFFF == 0, "page alignment"
@@ -2562,49 +2740,29 @@ def enable_virt_mem(vm: VirtualMachine, alloc: PageAllocator, priv_lvl: int, cod
             data_segment_end = code_segment_start
         else:
             assert code_segment_end <= data_segment_start
-    levels = [
-        alloc.get_and_alloc_next_false() << 12
-        for i in range(4)
-    ]
-    print(levels)
     for addr in range(code_segment_start, code_segment_end, 4096):
-        lst_new = insert_page_tables(
+        assert insert_page_tables_1(
             vm, addr, priv_lvl,
-            levels[0], levels[1], levels[2], levels[3],
+            adv_alloc,
             PTE_VALID_BIT | PTE_EXEC_BIT,
-            False
+            dbg_prn=dbg_prn, force_new_pte_1=True
         )
-        for i, is_used in enumerate(lst_new):
-            if is_used:
-                levels[i] = alloc.get_and_alloc_next_false() << 12
     if data_segment_end is not None:
         for addr in range(data_segment_start, data_segment_end, 4096):
-            lst_new = insert_page_tables(
+            assert insert_page_tables_1(
                 vm, addr, priv_lvl,
-                levels[0], levels[1], levels[2], levels[3],
+                adv_alloc,
                 PTE_VALID_BIT | PTE_WRITE_BIT | PTE_DIRTY_BIT,
-                False
+                dbg_prn=dbg_prn, force_new_pte_1=True
             )
-            for i, is_used in enumerate(lst_new):
-                if is_used:
-                    levels[i] = alloc.get_and_alloc_next_false() << 12
+        vm.sp = data_segment_end
     else:
         addr = data_segment_start
-        while True:
-            lst_new = insert_page_tables(
+        while insert_page_tables_1(
                 vm, addr, priv_lvl,
-                levels[0], levels[1], levels[2], levels[3],
+                adv_alloc,
                 PTE_VALID_BIT | PTE_WRITE_BIT | PTE_DIRTY_BIT,
-                False
-            )
-            try:
-                for i, is_used in enumerate(lst_new):
-                    if is_used:
-                        levels[i] = alloc.get_and_alloc_next_false() << 12
-            except IndexError:
-                break
-            else:
-                addr += 4096
-
-    for addr in levels:
-        alloc[addr >> 12] = False
+                dbg_prn=dbg_prn, force_new_pte_1=True
+            ):
+            addr += 4096
+        vm.sp = addr
