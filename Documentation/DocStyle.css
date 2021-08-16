@@ -29,6 +29,9 @@
 .Isaac-Table tr.ns td, .Isaac-Table td.ns{
   background-color: red;
 }
+.Isaac-Table tr.ns td, .Isaac-Table td.unused{
+  background-color: #777;
+}
 /* TODO this */
 .Isaac-Table tr.nsm td a:link {
   color: #BF0;

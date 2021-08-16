@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>StackVM Instruction Documentation | SYSREG</title>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+</head>
+
+<body style="background-color: white; color: black;">
+  <h1> StackVM Virtual Memory </h1>
+  <h2>Lower 12 permission bits</h2>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="7" class="unused">RESERVED (0)</td>
+        <td>PTE_HUGE_BIT (set to 1 to make the current entry act like an end-level entry)</td>
+        <td>PTE_DIRTY_BIT (end-level permission only)</td>
+        <td>PTE_EXEC_BIT (end-level permission only)</td>
+        <td>PTE_WRITE_BIT (end-level permission only)</td>
+        <td>PTE_VALID_BIT (end-level permission only)</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2>32-bit Virtual Memory modes (Unsupported right now)</h2>
+  <h3>1-level 4KiB size page addressing</h3>
+  <h4>Virtual Address structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="32" class="unused">RESERVED(must be set to 0)</td>
+        <td colspan="20">Virtual Address</td>
+        <td colspan="12">Lower 12 bits of physical address</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4>Top Level Page Table Pointer structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="32" class="unused">RESERVED (must be set to 0)</td>
+        <td colspan="20">upper 20 bits of lower 32 bits of physical address pointing to the page table</td>
+        <td colspan="12">Top Level Page Table Pointer Permissions</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4>Top Level Page Table structure</h4>
+  <p>the top level page table is an area of 4 * 2 ** 20 = 4194304 = 4 MiB contiguous bytes</p>
+  <h4>Top Level Page Table Entry structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="20">upper 20 bits of lower 32 bits of physical address pointing to the page</td>
+        <td colspan="12">Page Permissions</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2>64-bit Virtual Memory modes</h2>
+  <p>
+    with 64-bit addressing the leading bit of the virtual address indicates which privilege level the address belongs
+    to. 0x8000'0000'0000'0000 is in user space and 0x7FFF'FFFF'FFFF'FFFF is in kernel space
+  </p>
+  <h3>4-level 9 bit addr per level 4KiB size page addressing</h3>
+  <h4>Virtual Address structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="1">priv_lvl <br /> 0:&nbsp;Kernel <br /> 1:&nbsp;User</td>
+        <td colspan="15" class="unused">0</td>
+        <td colspan="9">virt addr part 1 (PT1 index)</td>
+        <td colspan="9">virt addr part 2 (PT2 index)</td>
+        <td colspan="9">virt addr part 3 (PT3 index)</td>
+        <td colspan="9">virt addr part 4 (PT4 index)</td>
+        <td colspan="12">Lower 12 bits of physical address</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>4-level 10 bit addr per level 8KiB size page addressing</h3>
+  <h4>Virtual Address structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="1">priv_lvl <br /> 0:&nbsp;Kernel <br /> 1:&nbsp;User</td>
+        <td colspan="10" class="unused">0</td>
+        <td colspan="10">virt addr part 1 (PT1 index)</td>
+        <td colspan="10">virt addr part 2 (PT2 index)</td>
+        <td colspan="10">virt addr part 3 (PT3 index)</td>
+        <td colspan="10">virt addr part 4 (PT4 index)</td>
+        <td colspan="13">Lower 13 bits of physical address</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>4-level 11 bit addr per level 16KiB size page addressing</h3>
+  <h4>Virtual Address structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="1">priv_lvl <br /> 0:&nbsp;Kernel <br /> 1:&nbsp;User</td>
+        <td colspan="5" class="unused">0</td>
+        <td colspan="11">virt addr part 1 (PT1 index)</td>
+        <td colspan="11">virt addr part 2 (PT2 index)</td>
+        <td colspan="11">virt addr part 3 (PT3 index)</td>
+        <td colspan="11">virt addr part 4 (PT4 index)</td>
+        <td colspan="14">Lower 14 bits of physical address</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>4-level 12 bit addr per level 32KiB size page addressing</h3>
+  <h4>Virtual Address structure</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="1">priv_lvl <br /> 0:&nbsp;Kernel <br /> 1:&nbsp;User</td>
+        <td colspan="12">virt addr part 1 (PT1 index)</td>
+        <td colspan="12">virt addr part 2 (PT2 index)</td>
+        <td colspan="12">virt addr part 3 (PT3 index)</td>
+        <td colspan="12">virt addr part 4 (PT4 index)</td>
+        <td colspan="15">Lower 15 bits of physical address</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>elaborated explanation of 4 level virtual address to physical address translation</h3>
+  <p>the description below is specifically for 12 bits per level 32KiB per page but can be generalized to all 4-level n
+    bits per level and 2**(n + 3) bytes per page virtual memory modes</p>
+  <h4>SVSR_USER_PTE/SVSR_KERNEL_PTE</h4>
+  <p>points to a table (PT1 (Page Table 1)) indexed by vaddr part 1</p>
+  <h4>Top Level Table (PT1 indexed by virt addr part 1) Entry</h4>
+  <p>this entry sits in PT1 at index vaddr part 1 and points to a specific PT2</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="49">phys addr pointing to PT2</td>
+        <td colspan="15">mid-level permissions</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4>2nd Level Table (PT2 indexed by virt addr part 2) Entry</h4>
+  <p>this entry sits in PT2 at index vaddr part 2 and points to a specific PT3</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="49">phys addr pointing to PT3</td>
+        <td colspan="15">mid-level permissions</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4>3rd Level Table (PT3 indexed by virt addr part 3) Entry</h4>
+  <p>this entry sits in PT3 at index vaddr part 3 and points to a specific PT4</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="49">phys addr pointing to PT4 or </td>
+        <td colspan="15">mid-level permissions</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4>4th/Bottom Level Table (PT4 indexed by virt addr part 4) Entry</h4>
+  <p>this entry sits in PT4 at index vaddr part 4 and points to a specific Page of physical memory</p>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="49">phys addr pointing to 32KiB page that will be indexed by the lower 15 bits of the virtual
+          address</td>
+        <td colspan="15">memory permissions</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>Page Fault Interrupt</h3>
+  <h4>Page Fault</h4>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Interrupt Argument Name</th>
+        <th>Argument Meaning</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Arg0</td>
+        <td>Virtual Memory Error Code/Info (see PAGE_FAULT_ARG_0)</td>
+      </tr>
+      <tr>
+        <td>Arg1</td>
+        <td>Virtual Address attempted</td>
+      </tr>
+    </tbody>
+  </table>
+  <h5>VME error codes</h5>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>VME_NONE</td>
+        <td>0</td>
+      </tr>
+      <tr>
+        <td>VME_PAGE_NOT_PRESENT</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td>VME_PAGE_BAD_PERMS</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td>VME_PHYS_MEMORY_ACCESS_DENIED</td>
+        <td>3</td>
+      </tr>
+    </tbody>
+  </table>
+  <h5>PAGE_FAULT_ARG_0 for VME_PAGE_NOT_PRESENT</h5>
+  <table class="Isaac-Table">
+    <thead>
+      <tr>
+        <th>63</th><th>62</th><th>61</th><th>60</th><th>59</th><th>58</th><th>57</th><th>56</th><th>55</th><th>54</th><th>53</th><th>52</th><th>51</th><th>50</th><th>49</th><th>48</th><th>47</th><th>46</th><th>45</th><th>44</th><th>43</th><th>42</th><th>41</th><th>40</th><th>39</th><th>38</th><th>37</th><th>36</th><th>35</th><th>34</th><th>33</th><th>32</th><th>31</th><th>30</th><th>29</th><th>28</th><th>27</th><th>26</th><th>25</th><th>24</th><th>23</th><th>22</th><th>21</th><th>20</th><th>19</th><th>18</th><th>17</th><th>16</th><th>15</th><th>14</th><th>13</th><th>12</th><th>11</th><th>10</th><th>9</th><th>8</th><th>7</th><th>6</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th><th>0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="53">Extra data for page fault reason</td>
+        <td colspan="3">
+          Page Table level of failure
+        </td>
+        <td colspan="8">
+          VME (Virtual Memory Error) code
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="width: 100vw;height: 100vh"></div>
+</body>
+
+</html>

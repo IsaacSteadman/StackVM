@@ -1,0 +1,65 @@
+{
+  "guestConfig": [
+    {
+      "deviceId": 1,
+      "type": "processor",
+      "pkg_id": 0
+    },
+    {
+      "deviceId": 2,
+      "type": "processor",
+      "pkg_id": 0
+    },
+    {
+      "deviceId": 3,
+      "type": "video_out",
+      "source": {
+        "type": "named_host_window",
+        "name": "pygame_window_1"
+      }
+    },
+    {
+      "deviceId": 4,
+      "type": "mouse_basic",
+      "source": {
+        "type": "named_host_window",
+        "name": "pygame_window_1"
+      }
+    },
+    {
+      "deviceId": 5,
+      "type": "keyboard_basic",
+      "layout": 0,
+      "source": {
+        "type": "named_host_window",
+        "name": "pygame_window_1"
+      }
+    },
+    {
+      "deviceId": 6,
+      "type": "storage",
+      "uuid": "a14190ac-44a3-188e-a4d8-459e5c32fe48",
+      "source": {
+        "type": "named_host_file",
+        "name": "main"
+      }
+    }
+  ],
+  "hostConfig": {
+    "window": {
+      "name": "pygame_window_1",
+      "lib": "pygame",
+      "width": 1920,
+      "height": 1080,
+      "capture_mouse": true,
+      "capture_keyboard": true
+    },
+    "files": {
+      "main": {
+        "type": "block_storage",
+        "numSectors": 1024,
+        "sectorSize": 4096
+      }
+    }
+  }
+}

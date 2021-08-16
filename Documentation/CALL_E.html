@@ -4,7 +4,7 @@
   <title>StackVM Instruction Documentation | CALL_E</title>
   <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
 </head>
-<body>
+<body style="background-color: white;color:black;">
   <h1>CALL_E ("Extended Call" Instruction)</h1>
   <p>CALL_E is instruction 12 (0x0C) and instructs the processor to perform a call to the address on the stack and set the base pointer to the final stack pointer.</p>
   <p>STACK: [8-byte addr] -> [8-byte prev bp] [8-byte address of instruction after CALL_E]</p>
@@ -73,8 +73,8 @@
     <div>
       <h3>Stack Diagram</h3>
       <ul class="stack">
-        <li><span class="kw-type">UInt8</span>[<span class="kw-var">num</span>] bytes on stack</li>
-        <li><span class="kw-type">UInt64</span> <span class="kw-var">num</span></li>
+        <li><span class="kw-type">UInt8</span>[(<span class="kw-var">num</span> + 1) * 8] bytes on stack</li>
+        <li><span class="kw-type">UInt8</span> <span class="kw-var">num</span></li>
         <li>
           <span class="kw-type">UInt8</span>
           |<span class="kw-type">UInt16</span>
@@ -86,8 +86,8 @@
       </ul>
       <span>->SYSCALL{{stack switch and --priv_lvl}}-></span>
       <ul class="stack">
-        <li><span class="kw-type">UInt8</span>[<span class="kw-var">num</span>] bytes on stack</li>
-        <li><span class="kw-type">UInt64</span> <span class="kw-var">num</span></li>
+        <li><span class="kw-type">UInt8</span>[(<span class="kw-var">num</span> + 1) * 8] bytes on stack</li>
+        <li><span class="kw-type">UInt8</span> <span class="kw-var">num</span></li>
         <li><span class="kw-type">UInt64</span> <span class="kw-var">sys_num</span></li>
         <li><span class="kw-type">UInt64</span> <span class="kw-var">prev_bp</span></li>
         <li><span class="kw-type">UInt64</span> <span class="kw-var">prev_ip</span></li>

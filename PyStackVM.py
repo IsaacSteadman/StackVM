@@ -369,99 +369,6 @@ LstStackVM_BCC_Types = [
     "UI_4_", "SI_4_", "UI_8_", "SI_8_",
     "F_2_", "F_4_", "F_8_", "F_16_",
 ]
-"""
-typedef unsigned long long SizeL;
-struct Range {
-    SizeL Start, End;
-};
-class IdAllocator {
-    Range *LstRanges;
-    SizeL NumRanges, AllocRanges;
-    SizeL tMin, tMax;
-    // assume that an IdAllocator when fully constructed satisfies
-    //   (NumRanges == 1 && AllocRanges >= NumRanges && LstRanges != 0 && LstRanges[0].End >= LstRanges[0].Start)
-    IdAllocator(Range *ArrRanges, SizeL LenArr, SizeL Min, SizeL Max) {
-        NumRanges = 1;
-        AllocRanges = LenArr;
-        LstRanges = ArrRanges;
-        LstRanges[0].Start = tMin = Min;
-        LstRanges[0].End = tMax = Max;
-    }
-    void ReduceRanges() {
-        SizeL i = 1;
-        for (SizeL c = 1; c < NumRanges; ++c) {
-            if (i != c) LstRanges[i] = LstRanges[c];
-            if (LstRanges[i - 1].End >= LstRanges[i].Start) {
-                LstRanges[i - 1].End = LstRanges[i].End;
-                LstRanges[i].Start = LstRanges[i].End;
-            } else if (LstRanges[i - 1].Start != LstRanges[i - 1].End) ++i;
-        }
-        NumRanges = i;
-    }
-    Range GetRange(SizeL Length) {
-        if (Length == 0) return {LstRanges[0].Start, LstRanges[0].Start};
-        Range Rtn = {0, 0};
-        for (SizeL c = 0; c < NumRanges; ++c) {
-            if (LstRanges[c].Start - LstRanges[c].End >= Length) {
-                Rtn.Start = LstRanges[c].Start;
-                Rtn.End = Rtn.Start + Length;
-                break;
-            }
-        }
-        return Rtn;
-    }
-    bool FreeRange(SizeL Start, SizeL Length) {
-        if (Start < tMin) return false; // outside of range
-        SizeL End = Start + Length;
-        if (End > tMax) return false; // outside of range
-        SizeL c;
-        for (c = 0; c < NumRanges; ++c) {
-            if (LstRanges[c].Start <= End) {
-                LstRanges[c].Start = Start;
-                ReduceRanges();
-                return true;
-            } else if (LstRanges[c].End >= Start) {
-                if (LstRanges[c].End <= End) LstRanges[c].End = End;
-                ReduceRanges();
-                return true;
-            } else if (LstRanges[c].Start > End) {
-                break;
-            }
-        }
-        if (c >= NumRanges) return false; // outsize range?
-        {
-            SizeL iPos = c;
-            c = NumRanges;
-            if (c + 1 > AllocRanges) return false; // not enough static memory
-            while (c-- > iPos) {
-                LstRanges[c + 1] = LstRanges[c];
-            }
-            ++NumRanges;
-            c = iPos;
-        }
-        LstRanges[c] = {Start, End};
-        ReduceRanges();
-        return true;
-    }
-}
-Range MallocRanges[1024];
-
-IdAllocator MemAlloc(MallocRanges, 1024, __malloc_heap_begin, __malloc_heap_end);
-
-void *malloc(SizeL nBytes) {
-    Range Res = MemAlloc.GetRange(nBytes + sizeof(nBytes));
-    if (Res.Start == 0 && Res.End == 0) {
-        return 0;
-    }
-    void *Rtn = (void *)(Res.Start);
-    *(SizeL *)Rtn = nBytes;
-    return (void *) ((SizeL) Rtn + sizeof(nBytes));
-}
-bool free(void *ptr) {
-    ptr = (void *)((SizeL)ptr - sizeof(SizeL));
-    return MemAlloc.FreeRange((SizeL)ptr, *(SizeL *)ptr);
-}
-"""
 
 
 def vm_load(vm_inst):
@@ -1688,7 +1595,7 @@ class VirtualMachine(object):
         vmd = self.virt_mem_mode
         if vmd == VM_4_LVL_10_BIT:
             assert sz <= 8192
-        elif vmd == VM_4_LVL_10_BIT:
+        elif vmd == VM_4_LVL_9_BIT:
             assert sz <= 4096
         if vmd:
             phys_addr = self.walk_page(addr, self.sys_regs[priv_lvl], vmd, permissions)

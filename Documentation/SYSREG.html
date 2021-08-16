@@ -1,174 +1,387 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>StackVM Instruction Documentation | SYSREG</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
+  <link rel="stylesheet" type="text/css" href="DocStyle.css" />
 </head>
-<body>
+
+<body style="background-color: white;color:black;">
   <h1> StackVM System Registers </h1>
   <p>StackVM's system registers are accessed through the LOAD and STOR instructions with variant SYS_REG</p>
   <p>
-    Interrupts: <br/>
-    &nbsp;&nbsp;15(0xF) - invalid SYSCALL
-  </p>
-  <p>
-    If a register is "Global" then the register is shared across all cores within each processor package (local to the chip) <br/>
-    If a register is "Universal" then the register is shared across all physical processors and cores <br/>
-    If a register is "Local" then the register is not shared between any cores and each core gets its own copy <br/>
+    Implementations can specify their own Model Specific registers with ids >= 0x20
   </p>
   <table id="registers" class="Isaac-Table">
-    <thead><tr><th>HEX_CODE</th><th>CODE_NAME</th><th>Universal/<br/>Global/<br/>Local?</th><th>Who Can Read?</th><th>Who Can Write?</th><th>Additional Notes</th><th>Feature<br/>Availability</th></tr></thead>
+    <thead>
+      <tr>
+        <th>HEX_CODE</th>
+        <th>CODE_NAME</th>
+        <th>Who Can Read?</th>
+        <th>Who Can Write?</th>
+        <th>Additional Notes</th>
+        <th>Feature<br />Availability</th>
+      </tr>
+    </thead>
     <tbody>
       <tr>
-        <td>0x00</td><td>HYPER_PTE</td><td>Local</td><td>PL0</td><td>PL0</td><td>Top Level Hypervisor Page Table Entry</td><td>V5 or greater</td>
+        <td>0x00</td>
+        <td>FLAGS</td>
+        <td>Kernel,User</td>
+        <td>Kernel,User(partial)</td>
+        <td>Priority/Privilege/Other Flags</td>
+        <td>All Variants</td>
       </tr>
       <tr>
-        <td>0x01</td><td>KERNEL_PTE</td><td>Local</td><td>PL0,PL1</td><td>PL0,PL1</td><td>Top Level Kernel Page Table Entry</td><td>V5 or greater</td>
+        <td>0x01</td>
+        <td>ISR</td>
+        <td>Kernel</td>
+        <td>Kernel</td>
+        <td>Kernel ISR (Interupt Service Routine) Table pointer</td>
+        <td>All Variants</td>
       </tr>
       <tr>
-        <td>0x02</td><td>USER_PTE</td><td>Local</td><td>PL0,PL1,PL2</td><td>PL0,PL1</td><td>Top Level User Page Table Entry</td><td>V5 or greater</td>
+        <td>0x02</td>
+        <td>SDP</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Kernel Startup Data Pointer (points to instance of struct StartupData)</td>
+        <td>All Variants</td>
       </tr>
       <tr>
-        <td>0x03</td><td>WEB_PTE</td><td>Local</td><td>PL0,PL1,PL2,PL3</td><td>PL0,PL1,PL2</td><td>Top Level Web Page Table Entry</td><td>V5 or greater</td>
+        <td>0x03</td>
+        <td>KERNEL_SYS_FN</td>
+        <td>Kernel</td>
+        <td>Kernel</td>
+        <td>target for SYSCALL into Kernel</td>
+        <td>All Variants</td>
       </tr>
       <tr>
-        <td>0x04</td><td>HYPER_SP</td><td>Local</td><td>PL0</td><td>PL0</td><td>Hypervisor Stack Pointer</td><td>All Variants</td>
+        <td>0x04</td>
+        <td>KERNEL_SP</td>
+        <td>Kernel</td>
+        <td>Kernel</td>
+        <td>Kernel Stack Pointer</td>
+        <td>All Variants</td>
       </tr>
       <tr>
-        <td>0x05</td><td>KERNEL_SP</td><td>Local</td><td>PL0,PL1</td><td>PL0,PL1</td><td>Kernel Stack Pointer</td><td>All Variants</td>
+        <td>0x05</td>
+        <td>USER_SP</td>
+        <td>Kernel,User</td>
+        <td>Kernel,User</td>
+        <td>User Stack Pointer</td>
+        <td>All Variants</td>
       </tr>
       <tr>
-        <td>0x06</td><td>USER_SP</td><td>Local</td><td>PL0,PL1,PL2</td><td>PL0,PL1</td><td>User Stack Pointer</td><td>All Variants</td>
+        <td>0x06</td>
+        <td>KERNEL_PTE</td>
+        <td>Kernel</td>
+        <td>Kernel</td>
+        <td>Top Level Kernel Page Table Entry</td>
+        <td>V5 or greater</td>
       </tr>
       <tr>
-        <td>0x07</td><td>WEB_SP</td><td>Local</td><td>PL0,PL1,PL2,PL3</td><td>PL0,PL1,PL2</td><td>Web Stack Pointer</td><td>All Variants</td>
+        <td>0x07</td>
+        <td>USER_PTE</td>
+        <td>Kernel</td>
+        <td>Kernel</td>
+        <td>Top Level User Page Table Entry</td>
+        <td>V5 or greater</td>
       </tr>
-      <tr>
-        <td>0x08</td><td>HYPER_SYS_FN</td><td>Local</td><td>PL0,PL1</td><td>PL0</td><td>target for SYSCALL into Hypervisor</td><td>All Variants</td>
-      </tr>
-      <tr>
-        <td>0x09</td><td>KERNEL_SYS_FN</td><td>Local</td><td>PL0,PL1,PL2</td><td>PL0,PL1</td><td>target for SYSCALL into Kernel</td><td>All Variants</td>
-      </tr>
-      <tr>
-        <td>0x0A</td><td>USER_SYS_FN</td><td>Local</td><td>PL0,PL1,PL2,PL3</td><td>PL0,PL1,PL2</td><td>target for SYSCALL into User</td><td>All Variants</td>
-      </tr>
-      <tr>
-        <td>0x0B</td><td>WEB_SYS_FN</td><td>Local</td><td>PL0,PL1,PL2,PL3</td><td>PL0,PL1,PL2,PL3</td><td>target for SYSCALL into Web</td><td>All Variants</td>
-      </tr>
-      <tr>
-        <td>0x0C</td><td>FLAGS</td><td>Local</td><td>PL0,PL1,PL2,PL3</td><td>PL0/PL1?</td><td>Priority/Privilege/Other Flags</td><td>All Variants</td>
-      </tr>
-      <tr>
-        <td>0x0D</td><td>?????</td><td>?????</td><td>?????</td><td>?????</td><td>?????</td><td>?????</td>
-      </tr>
-      <tr>
-        <td>0x0E</td><td>HYPER_ISR</td><td>Local</td><td>PL0/td><td>PL0</td><td>Hypervisor ISR Table pointer</td><td>All Variants</td>
-      </tr>
-      <tr>
-        <td>0x0F</td><td>KERNEL_ISR</td><td>Local</td><td>PL0,PL1</td><td>PL0,PL1</td><td>Kernel ISR Table pointer</td><td>All Variants</td>
-      </tr>
-
-      <!-- <tr><td>0x00</td><td>SYS_INFO_G</td><td>Global</td><td>Any</td><td>None</td><td>Holds Global System Infomation (Number of cores, this core's id ...)</td></tr>
-      <tr><td>0x01</td><td>SYS_INFO_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Local Processor Infomation (execution/privilege level ...)</td></tr>
-      <tr><td>0x02</td><td>TRAP_TABLE_G</td><td>Global</td><td>Any</td><td>PL1</td><td>Holds Global Trap Table</td></tr>
-      <tr><td>0x03</td><td>TRAP_TABLE_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Trap Table</td></tr>
-      <tr><td>0x04</td><td>INT_TABLE_G</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Global Interrupt Vector Table (for this processor)</td></tr>
-      <tr><td>0x05</td><td>INT_TABLE_L</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Interrupt Vector Table</td></tr>
-      <tr><td>0x06</td><td>SYS_MAIN_PTE</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Global Page Table Entry</td></tr>
-      <tr><td>0x07</td><td>SYS_PROC_PTE</td><td>Local</td><td>Any</td><td>PL1</td><td>Holds Process Page Table Entry</td></tr>
-      <tr><td>0x08</td><td>SYS_MAIN_SP</td><td>Local</td><td>PL1</td><td>PL1</td><td>Holds Main stack pointer</td></tr>-->
-    </tbody>
-  </table>
-  <h3>SYS_INFO_G</h3>
-  <table id="SYS_INFO_G" class="Isaac-Table">
-    <thead><tr><th>bits[0:15]</th><th>bits[16:31]</th><th>bits[32:63]</th></tr></thead>
-    <tbody>
-      <tr><td># of cores</td><td>this code id</td><td>RESERVED (0)</td></tr>
     </tbody>
   </table>
   <h3 id="SYSREG_FLAGS">SYSREG: FLAGS</h3>
   <table id="BITMAP_FLAGS" class="Isaac-Table">
     <thead>
       <tr>
-        <th>bits[0:7]</th>
-        <th>bits[8:9]</th>
-        <th>bits[10:13]</th>
-        <th>bits[14:63]</th>
+        <th>63</th>
+        <th>62</th>
+        <th>61</th>
+        <th>60</th>
+        <th>59</th>
+        <th>58</th>
+        <th>57</th>
+        <th>56</th>
+        <th>55</th>
+        <th>54</th>
+        <th>53</th>
+        <th>52</th>
+        <th>51</th>
+        <th>50</th>
+        <th>49</th>
+        <th>48</th>
+        <th>47</th>
+        <th>46</th>
+        <th>45</th>
+        <th>44</th>
+        <th>43</th>
+        <th>42</th>
+        <th>41</th>
+        <th>40</th>
+        <th>39</th>
+        <th>38</th>
+        <th>37</th>
+        <th>36</th>
+        <th>35</th>
+        <th>34</th>
+        <th>33</th>
+        <th>32</th>
+        <th>31</th>
+        <th>30</th>
+        <th>29</th>
+        <th>28</th>
+        <th>27</th>
+        <th>26</th>
+        <th>25</th>
+        <th>24</th>
+        <th>23</th>
+        <th>22</th>
+        <th>21</th>
+        <th>20</th>
+        <th>19</th>
+        <th>18</th>
+        <th>17</th>
+        <th>16</th>
+        <th>15</th>
+        <th>14</th>
+        <th>13</th>
+        <th>12</th>
+        <th>11</th>
+        <th>10</th>
+        <th>9</th>
+        <th>8</th>
+        <th>7</th>
+        <th>6</th>
+        <th>5</th>
+        <th>4</th>
+        <th>3</th>
+        <th>2</th>
+        <th>1</th>
+        <th>0</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td><a href="#FLAGS_PRIORITY">Priority</a> (PR0 - PR255)</td>
-        <td><a href="#FLAGS_PRIV_LVL">Privilege Level</a> (PL0 - PL3)</td>
-        <td><a href="#FLAGS_VM_MEM_MODE">Virtual Memory Mode</a></td>
-        <td>RESERVED (0)</td>
+        <td colspan="49" class="unused">RESERVED</td>
+        <td colspan="1"><a href="#FLAGS_EN_INTERRUPTS">Enable Interrupts</a></td>
+        <td colspan="4"><a href="#FLAGS_VM_MEM_MODE">Virtual Memory Mode</a></td>
+        <td colspan="1"><a href="#FLAGS_VADDR_MSB_EQ_PRIV">vaddr_msb_eq_priv</a></td>
+        <td colspan="1"><a href="#FLAGS_PRIV_LVL">Privilege Level</a><br />0:&nbsp;Kernel<br />1:&nbsp;User</td>
+        <td colspan="8"><a href="#FLAGS_PRIORITY">Priority</a> (PR0 - PR255)</td>
       </tr>
     </tbody>
   </table>
-  <div id="FLAGS_PRIORITY">
-    <h4>Priority</h4>
+  <div id="FLAGS_VADDR_MSB_EQ_PRIV">
+    <h4>vaddr_msb_eq_priv</h4>
+    <p>Access allowed table for when <strong>vaddr_msb_eq_priv</strong> is 0</p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>priv_lvl -> <br />Most Significant<br />Bit of Virtual Address<br /> | <br />V</th>
+          <th>0 (Kernel)</th>
+          <th>1 (User)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>0</th>
+          <td>
+            attempt resolve KERNEL_PTE <br />
+            if failed then resolve USER_PTE
+          </td>
+          <td>
+            resolve USER_PTE
+          </td>
+        </tr>
+        <tr>
+          <th>1</th>
+          <td>
+            attempt resolve KERNEL_PTE <br />
+            if failed then resolve USER_PTE
+          </td>
+          <td>
+            resolve USER_PTE
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Access allowed table for when <strong>vaddr_msb_eq_priv</strong> is 1</p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>priv_lvl -> <br />Most Significant<br />Bit of Virtual Address<br /> | <br />V</th>
+          <th>0 (Kernel)</th>
+          <th>1 (User)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>0</th>
+          <td>
+            resolve KERNEL_PTE
+          </td>
+          <td>
+            Fail
+          </td>
+        </tr>
+        <tr>
+          <th>1</th>
+          <td>
+            resolve USER_PTE
+          </td>
+          <td>
+            resolve USER_PTE
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="FLAGS_VM_MEM_MODE">
+    <h4>Virtual Memory Mode</h4>
     <p>
-      Priority is the value that determines whether an interrupt request <br/>
-      pre-empts the currently running thread. If the priority number <br/>
-      currently in FLAGS is greater than the priority number of the interrupt <br/>
-      request then the interrupt request initiates a "switch_to_interrupt". <br/>
+      See <a href="VirtualMemory.html">VirtualMemory</a> for more information
+    <table id="VM_MEM_MODE" class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Mode Code</th>
+          <th>Levels</th>
+          <th>Bits per Level</th>
+          <th>Page Size</th>
+          <th>Virtual Address Size</th>
+          <th>num low order bits same in <br /> virtual and physical address</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x0</td>
+          <td colspan="5">Virtual Memory disabled</td>
+        </tr>
+        <tr>
+          <td>0x1</td>
+          <td>4 levels</td>
+          <td>9 bits</td>
+          <td>4KiB</td>
+          <td>48 bits total addr size</td>
+          <td>12 bits</td>
+        </tr>
+        <tr>
+          <td>0x2</td>
+          <td>4 levels</td>
+          <td>10 bits</td>
+          <td>8KiB</td>
+          <td>53 bits total addr size</td>
+          <td>13 bits</td>
+        </tr>
+        <tr>
+          <td>0x3</td>
+          <td>2 levels</td>
+          <td>10 bits</td>
+          <td>4KiB</td>
+          <td>32 bits total addr size</td>
+          <td>12 bits</td>
+        </tr>
+        <tr>
+          <td>0x4</td>
+          <td>4 levels</td>
+          <td>11 bits</td>
+          <td>16KiB</td>
+          <td>58 bits total addr size</td>
+          <td>14 bits</td>
+        </tr>
+        <tr>
+          <td>0x5</td>
+          <td>4 levels</td>
+          <td>12 bits</td>
+          <td>32KiB</td>
+          <td>63 bits total addr size</td>
+          <td>15 bits</td>
+        </tr>
+        <tr>
+          <td>0x6</td>
+          <td colspan="5" rowspan="10" class="unused">RESERVED</td>
+        </tr>
+        <tr>
+          <td>0x7</td>
+        </tr>
+        <tr>
+          <td>0x8</td>
+        </tr>
+        <tr>
+          <td>0x9</td>
+        </tr>
+        <tr>
+          <td>0xA</td>
+        </tr>
+        <tr>
+          <td>0xB</td>
+        </tr>
+        <tr>
+          <td>0xC</td>
+        </tr>
+        <tr>
+          <td>0xD</td>
+        </tr>
+        <tr>
+          <td>0xE</td>
+        </tr>
+        <tr>
+          <td>0xF</td>
+        </tr>
+      </tbody>
+    </table>
     </p>
   </div>
   <div id="FLAGS_PRIV_LVL">
     <h4>Privilege Level</h4>
     <p>
-      Privilege Level indicates the level of privilege the current thread <br/>
-      has. There are 4 privilege levels, 3 of which are intended for main <br/>
-      use (the hypervisor privilege level is not intended for main use). <br/>
-      The 4 privilege levels are as follows <br/>
-      <ul>
+      Privilege Level indicates the level of privilege the current thread <br />
+      has. There are 4 privilege levels, 3 of which are intended for main <br />
+      use (the hypervisor privilege level is not intended for main use). <br />
+      The 4 privilege levels are as follows <br />
+    <ul>
       <li>
-        HYPER - Hyper visor privilege <br/>
-        &nbsp;&nbsp;&nbsp;has access to nearly all cpu registers and <br/>
-        &nbsp;&nbsp;&nbsp;memory (still is subject to RWX permissions <br/>
-        &nbsp;&nbsp;&nbsp;but hypervisor can change those permissions) <br/>
+        KERNEL - Kernel space privilege <br />
+        &nbsp;&nbsp;&nbsp;has access to the entire phyisical memory space <br />
+        &nbsp;&nbsp;&nbsp;has access to all FLAGS, I/O, interrupts <br />
       </li>
       <li>
-        KERNEL - Kernel space privilege <br/>
-        &nbsp;&nbsp;&nbsp;has access to less than HYPER but still has <br/>
-        &nbsp;&nbsp;&nbsp;significant Low Level privileges and permissions <br/>
-        &nbsp;&nbsp;&nbsp;(access to FLAGS, I/O, interrupts and virtual memory) <br/>
-        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into HYPER <br/>
+        USER - User space privilege <br />
+        &nbsp;&nbsp;&nbsp;cannot write to most of flags (no priority, vm mode, or priv lvl changing) <br />
+        &nbsp;&nbsp;&nbsp;cannot access I/O or interrupts without Kernel<br />
+        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into Kernel<br />
       </li>
-      <li>
-        USER - User space privilege <br/>
-        &nbsp;&nbsp;&nbsp;cannot write to FLAGS except to switch to web space <br/>
-        &nbsp;&nbsp;&nbsp;cannot access I/O or interrupts without KERNEL<br/>
-        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into KERNEL <br/>
-      </li>
-      <li>
-        WEB - Web/untrusted space privilege <br/>
-        &nbsp;&nbsp;&nbsp;has the least access to resources <br/>
-        &nbsp;&nbsp;&nbsp;cannot write to any CPU registers<br/>
-        &nbsp;&nbsp;&nbsp;all SYSCALLs from here call into USER <br/>
-      </li>
-      </ul>
+    </ul>
     </p>
   </div>
-  <div id="FLAGS_VM_MEM_MODE">
-    <h4>Virtual Memory Mode</h4>
+  <div id="FLAGS_PRIORITY">
+    <h4>Priority</h4>
     <p>
-      List of Modes<br/>
-      &nbsp;&nbsp;Mode 0 - Virtual Memory disabled<br/>
-      &nbsp;&nbsp;Mode 1 - Virtual Memory 4 level<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;48 bit address<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;9 bits per level<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;12 bits physical direct mapped low order bits<br/>
-      &nbsp;&nbsp;Mode 2 - Virtual Memory 4 level<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;53 bit address<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;10 bits per level<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;13 bits physical direct mapped low order bits<br/>
-      &nbsp;&nbsp;Mode 3 - Virtual Memory 2 level (Legacy like 32bit 80386)<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;32 bit address<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;10 bits per level<br/>
-      &nbsp;&nbsp;&nbsp;&nbsp;12 bits physical direct mapped low order bits<br/>
+      Priority is the value that determines whether an interrupt request <br />
+      pre-empts the currently running thread. If the priority number <br />
+      currently in FLAGS is greater than the priority number of the interrupt <br />
+      request then the interrupt request initiates a "switch_to_interrupt". <br />
     </p>
   </div>
+  <h3 id="SYSREG_ISR">SysReg ISR (Interrupt Service Routine table)</h3>
+  <p>
+    This is a pointer to a table of 4096 = 256 (number of interrupt codes)
+    x 16 (8 bytes FLAGS, 8 bytes function pointer) bytes. This pointer is
+    treated as a virtual address and is translated to a physical address in
+    the current context.
+  </p>
+  <p>
+    When interrupt code n is triggered the processor looks up the entry in
+    <pre>uint64_t flags = ((uint64_t *)SYSREG_ISR)[2 * n];
+uint64_t addr = ((uint64_t *)SYSREG_ISR)[2 * n];
+uint64_t old_flags = SYSREG_FLAGS;
+SYSREG_FLAGS = flags;
+// interrupt_startup(old_flags)
+// JMP addr</pre>
+    the entire "switch to interrupt" process is atomic so if the flags for
+    an interrupt disables interrupts then the execution of that interrupt
+    service routine will not be interruptable (useful for interrupts like
+    pagefault)
+  </p>
   <div style="width:100%;height:100vh"></div>
   <script>
     {
@@ -188,4 +401,5 @@
     }
   </script>
 </body>
+
 </html>

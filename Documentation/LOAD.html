@@ -104,7 +104,7 @@
       <tr>
         <td>RES</td>
         <td>0b01010 (0x0A)</td>
-        <td>value is in the result register<strong>NOTE: further explaination is below</strong></td>
+        <td>value is in the result register <strong>NOTE: further explaination is below</strong></td>
       </tr>
       <tr>
         <td>EA_R_IP</td>
@@ -119,7 +119,7 @@
       <tr>
         <td>SYSREG</td>
         <td>0b01101 (0x0D)</td>
-        <td>value is in a System register (see <a href="SYSREG.html">SYSREG registers</a>)</td>
+        <td>value is in a System register (see <a href="SYSREG.html">SYSREG registers</a>) <br/> <strong>NOTE: Size is ignored and treated as 8</strong></td>
       </tr>
       <tr>
         <td rowspan="18">RESERVED</td>
@@ -224,6 +224,6 @@
   </table>
   <h3>A Note on the RES Variant</h3>
   <p>With RES the most significant bit of Size has a different meaning. If it is set the processor will push the result data on the stack</p>
-  <p>RES will always push the least significant [Size] bytes of ResSize of the result last (on top of the stack after the instruction executes).</p>
+  <p>RES will always push the least significant [Size] bytes of ResSize of the result last (on top of the stack after the instruction executes). these bytes will still be in little-endian order</p>
 </body>
 </html>
