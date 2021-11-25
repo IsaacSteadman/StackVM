@@ -367,12 +367,13 @@
     This is a pointer to a table of 4096 = 256 (number of interrupt codes)
     x 16 (8 bytes FLAGS, 8 bytes function pointer) bytes. This pointer is
     treated as a virtual address and is translated to a physical address in
-    the current context.
+    the current context. It is recommended (but not required) that this
+    pointer is 4096 byte aligned for better access performance.
   </p>
   <p>
     When interrupt code n is triggered the processor looks up the entry in
     <pre>uint64_t flags = ((uint64_t *)SYSREG_ISR)[2 * n];
-uint64_t addr = ((uint64_t *)SYSREG_ISR)[2 * n];
+uint64_t addr = ((uint64_t *)SYSREG_ISR)[2 * n + 1];
 uint64_t old_flags = SYSREG_FLAGS;
 SYSREG_FLAGS = flags;
 // interrupt_startup(old_flags)

@@ -20,7 +20,7 @@
   background-color: blue;
   color: white;
 }
-.Isaac-Table tr.contentious td, .Isaac-Table td.contentious {
+.Isaac-Table tr.inf td, .Isaac-Table td.inf {
   background-color: yellow;
 }
 .Isaac-Table tr.deprecated td, .Isaac-Table td.deprecated {
