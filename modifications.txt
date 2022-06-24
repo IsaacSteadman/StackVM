@@ -1,0 +1,28 @@
+This document includes the modifications to the 2nd iteration of StackVM
+to derive the 3rd iteration of StackVM (stackvm2)
+
+change SYSCALL num (the same num referred to in the documentation as `UInt64 num` and `UInt8[num] bytes_on_stack`)
+- change num to `UInt8`
+- change bytes_on_stack to `UInt8[(num + 1) * 8]` or `UInt64[num + 1]`
+- this changes
+  - the limits on number of bytes to pass on the stack that can be encoded
+    - the minimum number of bytes to copy to kernel changes from 0 to 8
+    - the maximum number of bytes to copy changes from 16 billion (1024^3) billion (1024^3) to 2048
+- reason:
+  - we chose 2048 since that cannot possible occupy more than 2 pages since
+    every unaligned memory access is guaranteed to perform a maximum of 2
+    virtual to physical address translations.
+
+change privilege levels
+- change the number of privilege levels from 4 to 2
+- reason:
+  - we do not need 4 privilege levels to support "web space"
+  - we only need to support "web space" in the kernel as a type of
+    "user space" with a different syscall context
+  - we did not know how to resolve the virtual to physical address
+    translation when nested privileges specify a top level page table entry.
+    Do you incur the 16 possible layers of indirection that web space may
+    trigger? do you allow User space to use physical addresses?
+  - efficiencies with process switching could still be gained by caching
+    TLBs and associating these cached TLBs with TLPTEs
+    
