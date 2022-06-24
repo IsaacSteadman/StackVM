@@ -1,4 +1,4 @@
-
+// shared file that should be compileable by the StackVM C/C++ compiler
 namespace stackvm {
   namespace ioint {
     typedef unsigned long long ui64;
@@ -61,6 +61,9 @@ namespace stackvm {
         BaseInterruptInfo bii;
         UnknownDeviceInfo device_added_info;
       };
+      struct StartupData {
+        UnknownInterruptInfo uii;
+      };
     }
     namespace video_out_basic {
       struct DeviceInfo {
@@ -70,10 +73,17 @@ namespace stackvm {
         ui64 reserved[5];
       };
       const ui32 CMD_ISSUE_HW_UPDATE_INT = 1;
+      const ui32 VIDEO_MODE_TEXT = 0;
+      const ui32 VIDEO_MODE_PIXEL = 1;
       struct CmdIssueHwUpdateInt {
         BaseDeviceCommand bdc;
+        ui32 video_mode;
       };
       const ui32 CMD_SET_MODE = 2;
+      struct CmdSetMode {
+        BaseDeviceCommand bdc;
+        ui32 mode;
+      };
 
       // only valid in text mode (set with CMD_SET_MODE)
       const ui32 CMD_TXT_WRITE_CHAR = 3;
@@ -108,6 +118,8 @@ namespace stackvm {
       };
     }
     namespace storage_io_basic {
+      const ui32 CMD_READ_INTO = 2;
+      const ui32 CMD_WRITE_FROM = 3;
       struct DeviceInfo {
         BaseDeviceInfo bdi;
         ui64 uuid[2];
@@ -115,7 +127,7 @@ namespace stackvm {
         ui8 ss_qd_nch_bi_unused[32];
         // ss means sector size (0: 1, 9: 512, 10: 1KiB, ..., 12: 4KiB, ..., 16: 64KiB, ..., 20: 1 MiB, ..., 30: 1 GiB)
         // qd means queue depth
-        // nch means num channels minus 1 (255 = 256 channels)
+        // nch means num channels (0 = 256 channels, 1 = 1 channel, 2 = 2 channels)
         // bi means boot info (0x1 mask indicates bootability)
         // unused is the rest of the array of bytes
       };
@@ -133,6 +145,7 @@ namespace stackvm {
       };
       struct CmdGetInfo {
         BaseDeviceCommand bdc;
+        // TODO
       };
     }
   }

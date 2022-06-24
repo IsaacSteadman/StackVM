@@ -10,9 +10,6 @@
 #else
 #define STACK_VM_EXPORT __declspec(dllexport)
 #endif
-#ifndef M_PI
-#define M_PI 3.141592653589793238462643383279
-#endif
 
 #define STACK_VM_VER_2 2
 // #define STACK_VM_VER_3
@@ -269,17 +266,20 @@ enum StackVM_SVSR
   SVSRB_SP = 0x04,
   SVSR_KERNEL_SP = 0x04,
   SVSR_USER_SP = 0x05,
-  SVSRB_PTE = 0x06,
-  SVSR_KERNEL_PTE = 0x06,
-  SVSR_USER_PTE = 0x07
+  SVSRB_BP = 0x06,
+  SVSR_KERNEL_BP = 0x06,
+  SVSR_USER_BP = 0x07,
+  SVSRB_PTE = 0x08,
+  SVSR_KERNEL_PTE = 0x08,
+  SVSR_USER_PTE = 0x09
 };
 
 enum StackVM_INT
 {
   INT_INVAL_OPCODE = 6,
+  INT_HARDWARE_IO = 7,
   INT_PROTECT_FAULT = 13,
-  INT_PAGE_FAULT = 14,
-  INT_INVAL_SYSCALL = 15
+  INT_PAGE_FAULT = 14
 };
 
 enum StackVM_MRQ
@@ -345,22 +345,46 @@ public:
   {
     return size_first + size_next;
   }
-  inline void writefrom(uint8_t *buf) {
-    if (size_first) {
+  inline void writefrom(uint8_t *buf)
+  {
+    if (size_first)
+    {
       memcpy(first, buf, size_first);
       buf += size_first;
     }
-    if (size_next) {
+    if (size_next)
+    {
       memcpy(next, buf, size_next);
     }
   }
-  inline void readinto(uint8_t *buf) {
-    if (size_first) {
+  inline void readinto(uint8_t *buf)
+  {
+    if (size_first)
+    {
       memcpy(buf, first, size_first);
       buf += size_first;
     }
-    if (size_next) {
+    if (size_next)
+    {
       memcpy(buf, next, size_next);
+    }
+  }
+  inline void readatinto(size_t off, uint8_t *buf, size_t bufsize)
+  {
+    if (off + bufsize < size_first)
+    {
+      memcpy(buf, first + off, bufsize);
+    }
+    else if (off >= size_first)
+    {
+      memcpy(buf, next + (off - size_first), bufsize);
+    }
+    else if (off < size_first)
+    {
+      memcpy(buf, first + off, size_first - off);
+      buf += size_first - off;
+      bufsize -= size_first - off;
+      memcpy(buf, next, bufsize);
     }
   }
   template <typename T>
@@ -423,7 +447,6 @@ public:
       return data;
     }
   }
-
 };
 
 class StackVM_TrapException
@@ -566,7 +589,7 @@ public:
         virt_syscall(virt_syscall),
         virt_mem_mode(0)
   {
-    sys_regs[SVSR_FLAGS] = priority | (priv_lvl << 8) | (virt_mem_mode << 10);
+    calc_flags();
   }
   void set_memory(uint8_t *mem, size_t size)
   {
@@ -1341,7 +1364,48 @@ protected:
   }
   void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_bp, uint64_t prev_sp, uint64_t prev_flags, uint64_t arg0 = 0, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0)
   {
-    // TODO
+    uint64_t isr_table_ptr = sys_regs[SVSR_ISR];
+    if (isr_table_ptr == 0)
+    {
+      running = false;
+      printf("NO ISR TABLE provided. dumping error report\n  int_n = ");
+      if (int_n == INT_INVAL_OPCODE)
+      {
+        printf("INT_INVAL_OPCODE");
+      }
+      else if (int_n == INT_PAGE_FAULT)
+      {
+        printf("INT_PAGE_FAULT");
+      }
+      else if (int_n == INT_PROTECT_FAULT)
+      {
+        printf("INT_PROTECT_FAULT");
+      }
+      else if (int_n == INT_HARDWARE_IO)
+      {
+        printf("INT_HARDWARE_IO");
+      }
+      else
+      {
+        printf("INT_UNKNOWN (0x%02X)", int_n);
+      }
+      printf("\n  prev_ip = 0x%016X\n  prev_bp = 0x%016X\n  prev_sp = 0x%016X\n  prev_flags = 0x%016X", prev_ip, prev_bp, prev_sp, prev_flags);
+      printf("\n  arg0 = 0x%016X\n  arg1 = 0x%016X\n  arg2 = 0x%016X\n  arg3 = 0x%016X\n", arg0, arg1, arg2, arg3);
+      return;
+    }
+
+    uint64_t flags_addr[2];
+    {
+      priv_lvl = PRIV_KERNEL; // switch so that we are getting memory under kernel privileges
+      calc_flags();
+      MemoryView page = get_memory_view(isr_table_ptr, 4096, MRQ_READ);
+      page.readatinto(int_n * 16, (uint8_t *)flags_addr, 16);
+      sys_regs[SVSR_FLAGS] = flags_addr[0] & ~SVSR_FLAGS_PRIV_MASK;
+      calc_from_flags();
+    }
+
+    // TODO: finish implementation of switch to interrupt
+
   }
 
   inline void calc_from_flags()
@@ -1351,6 +1415,15 @@ protected:
     priv_lvl = (flags & SVSR_FLAGS_PRIV_MASK) >> SVSR_FLAGS_PRIV_SHFT;
     vaddr_msb_eq_priv = (flags & SVSR_FLAGS_VADDR_MSB_EQ_PRIV_MASK) >> SVSR_FLAGS_VADDR_MSB_EQ_PRIV_SHFT;
     virt_mem_mode = (flags & SVSR_FLAGS_VIRT_MEM_MD_MASK) >> SVSR_FLAGS_VIRT_MEM_MD_SHFT;
+  }
+
+  inline void calc_flags()
+  {
+    uint64_t flags = ((priority << SVSR_FLAGS_PRI_SHFT) & SVSR_FLAGS_PRI_MASK);
+    flags |= (priv_lvl << SVSR_FLAGS_PRIV_SHFT) & SVSR_FLAGS_PRIV_MASK;
+    flags |= (vaddr_msb_eq_priv << SVSR_FLAGS_VADDR_MSB_EQ_PRIV_SHFT) & SVSR_FLAGS_VADDR_MSB_EQ_PRIV_MASK;
+    flags |= (virt_mem_mode << SVSR_FLAGS_VIRT_MEM_MD_SHFT) & SVSR_FLAGS_VIRT_MEM_MD_MASK;
+    sys_regs[SVSR_FLAGS] = flags;
   }
 
   inline void call(uint64_t addr)
@@ -1376,8 +1449,18 @@ protected:
   inline void switch_to_priv_simple(int priv_lvl)
   {
     // TODO
-    if (priv_lvl == 0) ;
+    if (priv_lvl == 0)
+      ;
     sys_regs[SVSRB_SP + priv_lvl] = sp;
+  }
+  inline void set_flags_switch_to_priv(uint64_t new_flags) {
+    uint64_t old_flags = sys_regs[SVSR_FLAGS];
+    if (old_flags & SVSR_FLAGS_PRIV_MASK != new_flags & SVSR_FLAGS_PRIV_MASK) {
+      int new_priv_lvl = (new_flags & SVSR_FLAGS_PRIV_MASK) >> SVSR_FLAGS_PRIV_SHFT;
+      // TODO
+    }
+    sys_regs[SVSR_FLAGS] = new_flags;
+    calc_from_flags();
   }
   inline void execute_once()
   {
@@ -2236,7 +2319,8 @@ protected:
             throw StackVM_TrapException(INT_PROTECT_FAULT, true);
           }
           uint8_t vmd = val >> 10 & 0xF;
-          if (vmd == VM_2_LVL_10_BIT_LEGACY || vmd > VM_4_LVL_12_BIT) {
+          if (vmd == VM_2_LVL_10_BIT_LEGACY || vmd > VM_4_LVL_12_BIT)
+          {
             throw StackVM_TrapException(INT_PROTECT_FAULT, true);
           }
           sys_regs[SVSR_FLAGS] = val;

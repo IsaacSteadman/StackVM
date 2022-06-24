@@ -3,12 +3,12 @@
     {
       "deviceId": 1,
       "type": "processor",
-      "pkg_id": 0
+      "pkgId": 0
     },
     {
       "deviceId": 2,
       "type": "processor",
-      "pkg_id": 0
+      "pkgId": 0
     },
     {
       "deviceId": 3,
@@ -51,14 +51,16 @@
       "lib": "pygame",
       "width": 1920,
       "height": 1080,
-      "capture_mouse": true,
-      "capture_keyboard": true
+      "captureMouse": true,
+      "captureKeyboard": true
     },
     "files": {
       "main": {
         "type": "block_storage",
-        "numSectors": 1024,
-        "sectorSize": 4096
+        "storageType": "dynamic",
+        "numSectors": 32768,
+        "sectorSize": 32768,
+        "fileName": "./main.bin"
       }
     }
   }
