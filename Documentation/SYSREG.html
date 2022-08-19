@@ -4,9 +4,10 @@
 <head>
   <title>StackVM Instruction Documentation | SYSREG</title>
   <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+  <script type="text/javascript" src="helper.js"></script>
 </head>
 
-<body style="background-color: white;color:black;">
+<body>
   <h1> StackVM System Registers </h1>
   <p>StackVM's system registers are accessed through the LOAD and STOR instructions with variant SYS_REG</p>
   <p>
@@ -74,6 +75,22 @@
       </tr>
       <tr>
         <td>0x06</td>
+        <td>KERNEL_BP</td>
+        <td>Kernel</td>
+        <td>Kernel</td>
+        <td>Kernel Base Pointer</td>
+        <td>All Variants</td>
+      </tr>
+      <tr>
+        <td>0x07</td>
+        <td>USER_BP</td>
+        <td>Kernel,User</td>
+        <td>Kernel,User</td>
+        <td>User Base Pointer</td>
+        <td>All Variants</td>
+      </tr>
+      <tr>
+        <td>0x08</td>
         <td>KERNEL_PTE</td>
         <td>Kernel</td>
         <td>Kernel</td>
@@ -81,7 +98,7 @@
         <td>V5 or greater</td>
       </tr>
       <tr>
-        <td>0x07</td>
+        <td>0x09</td>
         <td>USER_PTE</td>
         <td>Kernel</td>
         <td>Kernel</td>
@@ -364,11 +381,13 @@
   </div>
   <h3 id="SYSREG_ISR">SysReg ISR (Interrupt Service Routine table)</h3>
   <p>
-    This is a pointer to a table of 4096 = 256 (number of interrupt codes)
+    This is a pointer to a table of 4096 bytes = 256 (number of interrupt codes)
     x 16 (8 bytes FLAGS, 8 bytes function pointer) bytes. This pointer is
     treated as a virtual address and is translated to a physical address in
-    the current context. It is recommended (but not required) that this
-    pointer is 4096 byte aligned for better access performance.
+    the current execution context when an interrupt occurs. It is recommended
+    (but not required) that this pointer is 4096 byte aligned for better
+    access performance. The reason unaligned access can reduce performance is
+    virtual address to physical address translation and cache line alignment
   </p>
   <p>
     When interrupt code n is triggered the processor looks up the entry in

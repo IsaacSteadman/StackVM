@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | FMOD</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>FMOD ("Floating Point Modulus" Instruction)</h1>
-  <p>The FMOD instructions, number 112 (0x70) through 115 (0x73), all pop 2, N byte operands off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-      <li>B</li>
-    </ul>
-    <span>->FMOD-></span>
-    <ul class="stack">
-      <li>Result</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is B, the second popped is A.</p>
-  <p>All variants push the an N byte float onto the stack that represents the equivalent C expression: A % B</p>
-  <p>FMOD2 works on a 16 bit float (N = 2 bytes).</p>
-  <p>FMOD4 works on a 32 bit float (N = 4 bytes).</p>
-  <p>FMOD8 works on a 64 bit float (N = 8 bytes).</p>
-  <p>FMOD16 works on a 128 bit float (N = 16 bytes).</p>
-  <p>FMOD2 is assigned opcode 112 (0x70).</p>
-  <p>FMOD4 is assigned opcode 113 (0x71).</p>
-  <p>FMOD8 is assigned opcode 114 (0x72).</p>
-  <p>FMOD16 is assigned opcode 115 (0x73).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | FMOD</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>FMOD ("Floating Point Modulus" Instruction)</h1>
+    <p>
+      The FMOD instructions, number 112 (0x70) through 115 (0x73), all pop 2, N
+      byte operands off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+        <li>B</li>
+      </ul>
+      <span>->FMOD-></span>
+      <ul class="stack">
+        <li>Result</li>
+      </ul>
+    </div>
+    <p>The first operand popped off the stack is B, the second popped is A.</p>
+    <p>
+      All variants push the an N byte float onto the stack that represents the
+      equivalent C expression: A % B
+    </p>
+    <p>FMOD2 works on a 16 bit float (N = 2 bytes).</p>
+    <p>FMOD4 works on a 32 bit float (N = 4 bytes).</p>
+    <p>FMOD8 works on a 64 bit float (N = 8 bytes).</p>
+    <p>FMOD16 works on a 128 bit float (N = 16 bytes).</p>
+    <p>FMOD2 is assigned opcode 112 (0x70).</p>
+    <p>FMOD4 is assigned opcode 113 (0x71).</p>
+    <p>FMOD8 is assigned opcode 114 (0x72).</p>
+    <p>FMOD16 is assigned opcode 115 (0x73).</p>
+  </body>
 </html>

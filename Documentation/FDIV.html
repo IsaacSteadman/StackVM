@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | FDIV</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>FDIV ("Floating Point Divide" Instruction)</h1>
-  <p>The FDIV instructions, number 108 (0x6C) through 111 (0x6F), all pop 2, N byte operands off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-      <li>B</li>
-    </ul>
-    <span>->FDIV-></span>
-    <ul class="stack">
-      <li>Result</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is B, the second popped is A.</p>
-  <p>All variants push the an N byte float onto the stack that represents the equivalent C expression: A / B</p>
-  <p>FDIV2 works on a 16 bit float (N = 2 bytes).</p>
-  <p>FDIV4 works on a 32 bit float (N = 4 bytes).</p>
-  <p>FDIV8 works on a 64 bit float (N = 8 bytes).</p>
-  <p>FDIV16 works on a 128 bit float (N = 16 bytes).</p>
-  <p>FDIV2 is assigned opcode 108 (0x6C).</p>
-  <p>FDIV4 is assigned opcode 109 (0x6D).</p>
-  <p>FDIV8 is assigned opcode 110 (0x6E).</p>
-  <p>FDIV16 is assigned opcode 111 (0x6F).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | FDIV</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>FDIV ("Floating Point Divide" Instruction)</h1>
+    <p>
+      The FDIV instructions, number 108 (0x6C) through 111 (0x6F), all pop 2, N
+      byte operands off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+        <li>B</li>
+      </ul>
+      <span>->FDIV-></span>
+      <ul class="stack">
+        <li>Result</li>
+      </ul>
+    </div>
+    <p>The first operand popped off the stack is B, the second popped is A.</p>
+    <p>
+      All variants push the an N byte float onto the stack that represents the
+      equivalent C expression: A / B
+    </p>
+    <p>FDIV2 works on a 16 bit float (N = 2 bytes).</p>
+    <p>FDIV4 works on a 32 bit float (N = 4 bytes).</p>
+    <p>FDIV8 works on a 64 bit float (N = 8 bytes).</p>
+    <p>FDIV16 works on a 128 bit float (N = 16 bytes).</p>
+    <p>FDIV2 is assigned opcode 108 (0x6C).</p>
+    <p>FDIV4 is assigned opcode 109 (0x6D).</p>
+    <p>FDIV8 is assigned opcode 110 (0x6E).</p>
+    <p>FDIV16 is assigned opcode 111 (0x6F).</p>
+  </body>
 </html>

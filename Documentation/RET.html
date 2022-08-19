@@ -1,47 +1,56 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | RET_E</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body style="background-color: white;color:black;">
-  <h1>RET (Return Instruction)</h1>
-  <p>RET and IRET are instructions 126 (0x7E) and 127 (0x7F) respectively. </p>
-  <p>RET instructs the processor to perform a return to the address and base pointer on the stack.</p>
-  <p>IRET instructs the processor to perform a return from interrupt.</p>
-  <p><strong>NOTE: This instruction sets the stack pointer to the base pointer to then retreive the return context</strong></p>
-  <h3>Stack Diagram for RET</h3>
-  <div style="margin-left: 12px">
-    <span>((<strong>STACK_CHANGE</strong> sp=bp))-></span>
-    <ul class="stack">
-      <li>8-byte prev_bp</li>
-      <li>8-byte prev_ip</li>
-    </ul>
-    <span>->RET-></span>
-    <ul class="stack">
-      <li>NONE</li>
-    </ul>
-    <br/>
-  </div>
-  <p>RET will set bp=prev_bp and jump to prev_ip.</p>
-  <h3>Stack Diagram for IRET</h3>
-  <div style="margin-left: 12px">
-    <span>((<strong>STACK_CHANGE</strong> sp=bp))-></span>
-    <ul class="stack">
-      <li>arg3</li>
-      <li>arg2</li>
-      <li>arg1</li>
-      <li>arg0</li>
-      <li>prev_flags</li>
-      <li>prev_sp <sup>1</sup></li>
-      <li>prev_bp <sup>1</sup></li>
-      <li>prev_ip</li>
-    </ul>
-    <span>->IRET-></span>
-    <ul class="stack">
-      <li>NONE</li>
-    </ul>
-    <p>[1] - sp and bp are restored for current privilege level</p>
-  </div>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | RET_E</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>RET (Return Instruction)</h1>
+    <p>RET and IRET are instructions 126 (0x7E) and 127 (0x7F) respectively.</p>
+    <p>
+      RET instructs the processor to perform a return to the address and base
+      pointer on the stack.
+    </p>
+    <p>IRET instructs the processor to perform a return from interrupt.</p>
+    <p>
+      <strong
+        >NOTE: This instruction sets the stack pointer to the base pointer to
+        then retreive the return context</strong
+      >
+    </p>
+    <h3>Stack Diagram for RET</h3>
+    <div style="margin-left: 12px">
+      <span>((<strong>STACK_CHANGE</strong> sp=bp))-></span>
+      <ul class="stack">
+        <li>8-byte prev_bp</li>
+        <li>8-byte prev_ip</li>
+      </ul>
+      <span>->RET-></span>
+      <ul class="stack">
+        <li>NONE</li>
+      </ul>
+      <br />
+    </div>
+    <p>RET will set bp=prev_bp and jump to prev_ip.</p>
+    <h3>Stack Diagram for IRET</h3>
+    <div style="margin-left: 12px">
+      <span>((<strong>STACK_CHANGE</strong> sp=bp))-></span>
+      <ul class="stack">
+        <li>arg3</li>
+        <li>arg2</li>
+        <li>arg1</li>
+        <li>arg0</li>
+        <li>prev_flags</li>
+        <li>prev_sp <sup>1</sup></li>
+        <li>prev_bp <sup>1</sup></li>
+        <li>prev_ip</li>
+      </ul>
+      <span>->IRET-></span>
+      <ul class="stack">
+        <li>NONE</li>
+      </ul>
+      <p>[1] - sp and bp are restored for current privilege level</p>
+    </div>
+  </body>
 </html>

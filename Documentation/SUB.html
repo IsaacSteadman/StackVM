@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | SUB</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>SUB (Subtract Instruction)</h1>
-  <p>The SUB instructions, number 52 (0x34) through 55 (0x37), all pop 2, N byte operands off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-      <li>B</li>
-    </ul>
-    <span>->SUB-></span>
-    <ul class="stack">
-      <li>Result</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is B, the second popped is A.</p>
-  <p>All variants push a N byte unsigned integer onto the stack that represents the equivalent C expression: A - B</p>
-  <p>SUB1 works on an unsigned 8 bit integer (N = 1 byte).</p>
-  <p>SUB2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
-  <p>SUB4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
-  <p>SUB8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
-  <p>SUB1 is assigned opcode 52 (0x34).</p>
-  <p>SUB2 is assigned opcode 53 (0x35).</p>
-  <p>SUB4 is assigned opcode 54 (0x36).</p>
-  <p>SUB8 is assigned opcode 55 (0x37).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | SUB</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>SUB (Subtract Instruction)</h1>
+    <p>
+      The SUB instructions, number 52 (0x34) through 55 (0x37), all pop 2, N
+      byte operands off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+        <li>B</li>
+      </ul>
+      <span>->SUB-></span>
+      <ul class="stack">
+        <li>Result</li>
+      </ul>
+    </div>
+    <p>The first operand popped off the stack is B, the second popped is A.</p>
+    <p>
+      All variants push a N byte unsigned integer onto the stack that represents
+      the equivalent C expression: A - B
+    </p>
+    <p>SUB1 works on an unsigned 8 bit integer (N = 1 byte).</p>
+    <p>SUB2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
+    <p>SUB4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
+    <p>SUB8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
+    <p>SUB1 is assigned opcode 52 (0x34).</p>
+    <p>SUB2 is assigned opcode 53 (0x35).</p>
+    <p>SUB4 is assigned opcode 54 (0x36).</p>
+    <p>SUB8 is assigned opcode 55 (0x37).</p>
+  </body>
 </html>

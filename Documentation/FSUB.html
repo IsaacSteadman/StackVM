@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | FSUB</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>FSUB ("Floating Point Subtract" Instruction)</h1>
-  <p>The FSUB instructions, number 100 (0x64) through 103 (0x67), all pop 2, N byte operands off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-      <li>B</li>
-    </ul>
-    <span>->FSUB-></span>
-    <ul class="stack">
-      <li>Result</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is B, the second popped is A.</p>
-  <p>All variants push a N byte float onto the stack that represents the equivalent C expression: A - B</p>
-  <p>FSUB2 works on a 16 bit float (N = 2 bytes).</p>
-  <p>FSUB4 works on a 32 bit float (N = 4 bytes).</p>
-  <p>FSUB8 works on a 64 bit float (N = 8 bytes).</p>
-  <p>FSUB16 works on a 128 bit float (N = 16 bytes).</p>
-  <p>FSUB2 is assigned opcode 100 (0x64).</p>
-  <p>FSUB4 is assigned opcode 101 (0x65).</p>
-  <p>FSUB8 is assigned opcode 102 (0x66).</p>
-  <p>FSUB16 is assigned opcode 103 (0x67).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | FSUB</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>FSUB ("Floating Point Subtract" Instruction)</h1>
+    <p>
+      The FSUB instructions, number 100 (0x64) through 103 (0x67), all pop 2, N
+      byte operands off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+        <li>B</li>
+      </ul>
+      <span>->FSUB-></span>
+      <ul class="stack">
+        <li>Result</li>
+      </ul>
+    </div>
+    <p>The first operand popped off the stack is B, the second popped is A.</p>
+    <p>
+      All variants push a N byte float onto the stack that represents the
+      equivalent C expression: A - B
+    </p>
+    <p>FSUB2 works on a 16 bit float (N = 2 bytes).</p>
+    <p>FSUB4 works on a 32 bit float (N = 4 bytes).</p>
+    <p>FSUB8 works on a 64 bit float (N = 8 bytes).</p>
+    <p>FSUB16 works on a 128 bit float (N = 16 bytes).</p>
+    <p>FSUB2 is assigned opcode 100 (0x64).</p>
+    <p>FSUB4 is assigned opcode 101 (0x65).</p>
+    <p>FSUB8 is assigned opcode 102 (0x66).</p>
+    <p>FSUB16 is assigned opcode 103 (0x67).</p>
+  </body>
 </html>

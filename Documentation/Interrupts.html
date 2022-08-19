@@ -1,44 +1,88 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | Interrupts</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body style="background-color: white;color:black;">
-  <h1>StackVM Interrupts</h1>
-  <table id="registers" class="Isaac-Table">
-    <thead><tr><th>HEX_CODE</th><th>CODE_NAME</th><th>Short Description</th><th>Argument 0</th><th>Argument 1</th><th>Argument 2</th><th>Argument 3</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>0x06</td><td>INVAL_OPCODE</td><td>The Processor encountered an invalid opcode</td><td>Offending opcode</td><td>Offending opcode location</td><td></td><td></td>
-      </tr>
-      <tr>
-        <td>0x07</td><td>INT_HARDWARE_IO</td><td>Asynchronous Hardware IO</td><td>Pointer to interrupt data (struct UnknownInterruptInfo *ptr) should be the same as </td><td></td><td></td><td></td>
-      </tr>
-      <tr>
-        <td>0x0d</td><td>PROTECT_FAULT</td><td>Page has insufficient permissions</td><td>page table pointer or 0 for Top level</td><td>index into page table that was searched</td><td>lower 3 bits contain the page table level: 0 for top level 4 for the final permission entry</td><td>virtual address</td>
-      </tr>
-      <tr>
-        <td>0x0e</td><td>PAGE_FAULT</td><td>Page not present in the page tables</td><td>page table pointer or 0 for Top level</td><td>index into page table that was searched</td><td>lower 3 bits contain the page table level: 0 for top level 4 for the final permission entry</td><td>virtual address</td>
-      </tr>
-    </tbody>
-  </table>
-  <script>
-    {
-      const d = document.getElementById("registers");
-      if (!(d instanceof HTMLTableElement)) throw new Error("expected table");
+  <head>
+    <title>StackVM Instruction Documentation | Interrupts</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>StackVM Interrupts</h1>
+    <table id="registers" class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>HEX_CODE</th>
+          <th>CODE_NAME</th>
+          <th>Short Description</th>
+          <th>Argument 0</th>
+          <th>Argument 1</th>
+          <th>Argument 2</th>
+          <th>Argument 3</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x06</td>
+          <td>INVAL_OPCODE</td>
+          <td>The Processor encountered an invalid opcode</td>
+          <td>Offending opcode</td>
+          <td>Offending opcode location</td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x07</td>
+          <td>INT_HARDWARE_IO</td>
+          <td>Asynchronous Hardware IO</td>
+          <td>
+            Pointer to interrupt data (struct UnknownInterruptInfo *ptr) should
+            be the same as
+          </td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x0d</td>
+          <td>PROTECT_FAULT</td>
+          <td>Page has insufficient permissions</td>
+          <td>page table pointer or 0 for Top level</td>
+          <td>index into page table that was searched</td>
+          <td>
+            lower 3 bits contain the page table level: 0 for top level 4 for the
+            final permission entry
+          </td>
+          <td>virtual address</td>
+        </tr>
+        <tr>
+          <td>0x0e</td>
+          <td>PAGE_FAULT</td>
+          <td>Page not present in the page tables</td>
+          <td>page table pointer or 0 for Top level</td>
+          <td>index into page table that was searched</td>
+          <td>
+            lower 3 bits contain the page table level: 0 for top level 4 for the
+            final permission entry
+          </td>
+          <td>virtual address</td>
+        </tr>
+      </tbody>
+    </table>
+    <script>
       {
-        const rows = d.tBodies[0].rows
-        for (let c = 0; c < rows.length; ++c) {
-          const td = rows[c].cells[1];
-          const a = document.createElement("a");
-          a.href = "#INTERRUPT_" + td.innerText
-          a.innerText = td.innerText;
-          td.innerHTML = "";
-          td.appendChild(a);
+        const d = document.getElementById("registers");
+        if (!(d instanceof HTMLTableElement)) throw new Error("expected table");
+        {
+          const rows = d.tBodies[0].rows;
+          for (let c = 0; c < rows.length; ++c) {
+            const td = rows[c].cells[1];
+            const a = document.createElement("a");
+            a.href = "#INTERRUPT_" + td.innerText;
+            a.innerText = td.innerText;
+            td.innerHTML = "";
+            td.appendChild(a);
+          }
         }
       }
-    }
-  </script>
-</body>
+    </script>
+  </body>
 </html>

@@ -1,539 +1,926 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Set</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body style="background-color: white;color:black;">
-  <h1> StackVM Instruction Set </h1>
-  <div id="description" style="width:400px;">
-    <p>Every StackVM implementation must provide all 128 instructions (opcodes 0x00 to 0x7F) as listed in the table below and with the behavior specified in the associated page (linked under "Base Name").</p>
-    <p>Every instruction opcode is encoded as 1 byte and StackVM implementations may define up to 128 additional instructions (encoded as opcodes 0x80 to 0xFF).</p>
-    <p>
-      All Instructions (for which byte order is relevant) are Least Significant Byte (LSB) first and Most Significant Byte (MSB) last.<br/>
-      That is the LSB has a lower address number than the MSB which is also known as being <br/>
-      <strong>Little-Endian</strong>
-    </p>
-    <p><strong>NOTE</strong>: The stack diagram displayed in each instruction's page represents the push order when read left to right. <br/>
-      In other words, in a stack the left-most item is at the bottom and the right-most item is at the top.</p>
-  </div>
-  <div style="float: right;" id="errors"><h3>Errors</h3></div>
-  <div id="legend" style="padding: 8px;border: solid 1px black;display:inline-block;">
-    <h3 style="width:100%;text-align:center;margin:0.5em;">Legend</h3>
-    <table class="Isaac-Table">
+  <head>
+    <title>StackVM Instruction Set</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+
+  <body>
+    <h1>StackVM Instruction Set</h1>
+    <div id="description" style="width: 400px">
+      <p>
+        Every StackVM implementation must provide all 128 instructions (opcodes
+        0x00 to 0x7F) as listed in the table below and with the behavior
+        specified in the associated page (linked under "Base Name").
+      </p>
+      <p>
+        Every instruction opcode is encoded as 1 byte and StackVM
+        implementations may define up to 128 additional instructions (encoded as
+        opcodes 0x80 to 0xFF).
+      </p>
+      <p>
+        All Instructions (for which byte order is relevant) are Least
+        Significant Byte (LSB) first and Most Significant Byte (MSB) last.<br />
+        That is the LSB has a lower address number than the MSB which is also
+        known as being <br />
+        <strong>Little-Endian</strong>
+      </p>
+      <p>
+        <strong>NOTE</strong>: The stack diagram displayed in each instruction's
+        page represents the push order when read left to right. <br />
+        In other words, in a stack the left-most item is at the bottom and the
+        right-most item is at the top.
+      </p>
+    </div>
+    <div style="float: right" id="errors">
+      <h3>Errors</h3>
+    </div>
+    <div
+      id="legend"
+      style="padding: 8px; border: solid 1px black; display: inline-block"
+    >
+      <h3 style="width: 100%; text-align: center; margin: 0.5em">Legend</h3>
+      <table class="Isaac-Table">
+        <thead>
+          <tr>
+            <th>Short Name</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Normal (default)</td>
+            <td>Available and supported</td>
+          </tr>
+          <tr class="in_design">
+            <td>in_design</td>
+            <td>Will be supported in the future</td>
+          </tr>
+          <tr class="nsm">
+            <td>nsm</td>
+            <td>Not supported but might be soon</td>
+          </tr>
+          <tr class="inf">
+            <td>inf</td>
+            <td>Implementation Not Finalized</td>
+          </tr>
+          <tr class="deprecated">
+            <td>deprecated</td>
+            <td>Supported but not recommended</td>
+          </tr>
+          <tr class="ns">
+            <td>ns</td>
+            <td>Not supported (No plans for future support)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <table id="instructions" class="Isaac-Table">
       <thead>
-        <tr><th>Short Name</th><th>Description</th></tr>
+        <tr>
+          <th>Group Name</th>
+          <th>Group Code</th>
+          <th>Sub-Group Name</th>
+          <th>Sub-Group Code</th>
+          <th>Base Name</th>
+          <th>Base Code</th>
+          <th>Variant</th>
+          <th>Code</th>
+        </tr>
       </thead>
+
       <tbody>
-        <tr><td>Normal (default)</td><td>Available and supported</td></tr>
-        <tr class="in_design"><td>in_design</td><td>Will be supported in the future</td></tr>
-        <tr class="nsm"><td>nsm</td><td>Not supported but might be soon</td></tr>
-        <tr class="inf"><td>inf</td><td>Implementation Not Finalized</td></tr>
-        <tr class="deprecated"><td>deprecated</td><td>Supported but not recommended</td></tr>
-        <tr class="ns"><td>ns</td><td>Not supported (No plans for future support)</td></tr>
+        <tr>
+          <td rowspan="8">Single Special</td>
+          <td rowspan="8">0b00000***</td>
+          <td rowspan="8">N/A</td>
+          <td rowspan="8">N/A</td>
+          <td>NOP</td>
+          <td>0b00000000</td>
+          <td>NOP</td>
+          <td>0b00000000</td>
+        </tr>
+        <tr class="deprecated">
+          <td>HLT</td>
+          <td>0b00000001</td>
+          <td>HLT</td>
+          <td>0b00000001</td>
+        </tr>
+        <tr>
+          <td>EQ0</td>
+          <td>0b00000010</td>
+          <td>EQ0</td>
+          <td>0b00000010</td>
+        </tr>
+        <tr class="deprecated">
+          <td>NE0</td>
+          <td>0b00000011</td>
+          <td>NE0</td>
+          <td>0b00000011</td>
+        </tr>
+        <tr>
+          <td>LT0</td>
+          <td>0b00000100</td>
+          <td>LT0</td>
+          <td>0b00000100</td>
+        </tr>
+        <tr>
+          <td>LE0</td>
+          <td>0b00000101</td>
+          <td>LE0</td>
+          <td>0b00000101</td>
+        </tr>
+        <tr>
+          <td>GT0</td>
+          <td>0b00000110</td>
+          <td>GT0</td>
+          <td>0b00000110</td>
+        </tr>
+        <tr>
+          <td>GE0</td>
+          <td>0b00000111</td>
+          <td>GE0</td>
+          <td>0b00000111</td>
+        </tr>
+        <tr>
+          <td rowspan="8">Extended</td>
+          <td rowspan="8">0b00001***</td>
+          <td rowspan="8">N/A</td>
+          <td rowspan="8">N/A</td>
+          <td>CONV</td>
+          <td>0b00001000</td>
+          <td>CONV</td>
+          <td>0b00001000</td>
+        </tr>
+        <tr>
+          <td>SWAP</td>
+          <td>0b00001001</td>
+          <td>SWAP</td>
+          <td>0b00001001</td>
+        </tr>
+        <tr>
+          <td>LOAD</td>
+          <td>0b00001010</td>
+          <td>LOAD</td>
+          <td>0b00001010</td>
+        </tr>
+        <tr>
+          <td>STOR</td>
+          <td>0b00001011</td>
+          <td>STOR</td>
+          <td>0b00001011</td>
+        </tr>
+        <tr>
+          <td>CALL_E</td>
+          <td>0b00001100</td>
+          <td>CALL_E</td>
+          <td>0b00001100</td>
+        </tr>
+        <tr>
+          <td>RET_E</td>
+          <td>0b00001101</td>
+          <td>RET_E</td>
+          <td>0b00001101</td>
+        </tr>
+        <tr class="inf">
+          <td>SYSREG</td>
+          <td>0b00001110</td>
+          <td>SYSREG</td>
+          <td>0b00001110</td>
+        </tr>
+        <tr class="in_design">
+          <td>INT</td>
+          <td>0b00001111</td>
+          <td>INT</td>
+          <td>0b00001111</td>
+        </tr>
+        <tr>
+          <td rowspan="16">Bit/Byte Manip</td>
+          <td rowspan="16">0b0001****</td>
+          <td rowspan="16">N/A</td>
+          <td rowspan="16">N/A</td>
+          <td rowspan="4">LSHIFT</td>
+          <td rowspan="4">0b000100**</td>
+          <td>LSHIFT1</td>
+          <td>0b00010000</td>
+        </tr>
+        <tr>
+          <td>LSHIFT2</td>
+          <td>0b00010001</td>
+        </tr>
+        <tr>
+          <td>LSHIFT4</td>
+          <td>0b00010010</td>
+        </tr>
+        <tr>
+          <td>LSHIFT8</td>
+          <td>0b00010011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">RSHIFT</td>
+          <td rowspan="4">0b000101**</td>
+          <td>RSHIFT1</td>
+          <td>0b00010100</td>
+        </tr>
+        <tr>
+          <td>RSHIFT2</td>
+          <td>0b00010101</td>
+        </tr>
+        <tr>
+          <td>RSHIFT4</td>
+          <td>0b00010110</td>
+        </tr>
+        <tr>
+          <td>RSHIFT8</td>
+          <td>0b00010111</td>
+        </tr>
+        <tr class="deprecated">
+          <td rowspan="4">LROT</td>
+          <td rowspan="4">0b000110**</td>
+          <td>LROT1</td>
+          <td>0b00011000</td>
+        </tr>
+        <tr class="deprecated">
+          <td>LROT2</td>
+          <td>0b00011001</td>
+        </tr>
+        <tr class="deprecated">
+          <td>LROT4</td>
+          <td>0b00011010</td>
+        </tr>
+        <tr class="deprecated">
+          <td>LROT8</td>
+          <td>0b00011011</td>
+        </tr>
+        <tr class="deprecated">
+          <td rowspan="4">RROT</td>
+          <td rowspan="4">0b000111**</td>
+          <td>RROT1</td>
+          <td>0b00011100</td>
+        </tr>
+        <tr class="deprecated">
+          <td>RROT2</td>
+          <td>0b00011101</td>
+        </tr>
+        <tr class="deprecated">
+          <td>RROT4</td>
+          <td>0b00011110</td>
+        </tr>
+        <tr class="deprecated">
+          <td>RROT8</td>
+          <td>0b00011111</td>
+        </tr>
+        <tr>
+          <td rowspan="32">ALU Sign<br />Independent</td>
+          <td rowspan="32">0b001*****</td>
+          <td rowspan="32">N/A</td>
+          <td rowspan="32">N/A</td>
+          <td rowspan="4">AND</td>
+          <td rowspan="4">0b001000**</td>
+          <td>AND1</td>
+          <td>0b00100000</td>
+        </tr>
+        <tr>
+          <td>AND2</td>
+          <td>0b00100001</td>
+        </tr>
+        <tr>
+          <td>AND4</td>
+          <td>0b00100010</td>
+        </tr>
+        <tr>
+          <td>AND8</td>
+          <td>0b00100011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">OR</td>
+          <td rowspan="4">0b001001**</td>
+          <td>OR1</td>
+          <td>0b00100100</td>
+        </tr>
+        <tr>
+          <td>OR2</td>
+          <td>0b00100101</td>
+        </tr>
+        <tr>
+          <td>OR4</td>
+          <td>0b00100110</td>
+        </tr>
+        <tr>
+          <td>OR8</td>
+          <td>0b00100111</td>
+        </tr>
+        <tr>
+          <td rowspan="4">NOT</td>
+          <td rowspan="4">0b001010**</td>
+          <td>NOT1</td>
+          <td>0b00101000</td>
+        </tr>
+        <tr>
+          <td>NOT2</td>
+          <td>0b00101001</td>
+        </tr>
+        <tr>
+          <td>NOT4</td>
+          <td>0b00101010</td>
+        </tr>
+        <tr>
+          <td>NOT8</td>
+          <td>0b00101011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">XOR</td>
+          <td rowspan="4">0b001011**</td>
+          <td>XOR1</td>
+          <td>0b00101100</td>
+        </tr>
+        <tr>
+          <td>XOR2</td>
+          <td>0b00101101</td>
+        </tr>
+        <tr>
+          <td>XOR4</td>
+          <td>0b00101110</td>
+        </tr>
+        <tr>
+          <td>XOR8</td>
+          <td>0b00101111</td>
+        </tr>
+        <tr>
+          <td rowspan="4">ADD</td>
+          <td rowspan="4">0b001100**</td>
+          <td>ADD1</td>
+          <td>0b00110000</td>
+        </tr>
+        <tr>
+          <td>ADD2</td>
+          <td>0b00110001</td>
+        </tr>
+        <tr>
+          <td>ADD4</td>
+          <td>0b00110010</td>
+        </tr>
+        <tr>
+          <td>ADD8</td>
+          <td>0b00110011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">SUB</td>
+          <td rowspan="4">0b001101**</td>
+          <td>SUB1</td>
+          <td>0b00110100</td>
+        </tr>
+        <tr>
+          <td>SUB2</td>
+          <td>0b00110101</td>
+        </tr>
+        <tr>
+          <td>SUB4</td>
+          <td>0b00110110</td>
+        </tr>
+        <tr>
+          <td>SUB8</td>
+          <td>0b00110111</td>
+        </tr>
+        <tr>
+          <td rowspan="4">ADD_SP</td>
+          <td rowspan="4">0b001110**</td>
+          <td>ADD_SP1</td>
+          <td>0b00111000</td>
+        </tr>
+        <tr>
+          <td>ADD_SP2</td>
+          <td>0b00111001</td>
+        </tr>
+        <tr>
+          <td>ADD_SP4</td>
+          <td>0b00111010</td>
+        </tr>
+        <tr>
+          <td>ADD_SP8</td>
+          <td>0b00111011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">RST_SP</td>
+          <td rowspan="4">0b001111**</td>
+          <td>RST_SP1</td>
+          <td>0b00111100</td>
+        </tr>
+        <tr>
+          <td>RST_SP2</td>
+          <td>0b00111101</td>
+        </tr>
+        <tr>
+          <td>RST_SP4</td>
+          <td>0b00111110</td>
+        </tr>
+        <tr>
+          <td>RST_SP8</td>
+          <td>0b00111111</td>
+        </tr>
+        <tr>
+          <td rowspan="32">ALU Sign Specific</td>
+          <td rowspan="32">0b010*****</td>
+          <td rowspan="32">N/A</td>
+          <td rowspan="32">N/A</td>
+          <td rowspan="8">MUL</td>
+          <td rowspan="8">0b01000***</td>
+          <td>MUL1</td>
+          <td>0b01000000</td>
+        </tr>
+        <tr>
+          <td>MUL1S</td>
+          <td>0b01000001</td>
+        </tr>
+        <tr>
+          <td>MUL2</td>
+          <td>0b01000010</td>
+        </tr>
+        <tr>
+          <td>MUL2S</td>
+          <td>0b01000011</td>
+        </tr>
+        <tr>
+          <td>MUL4</td>
+          <td>0b01000100</td>
+        </tr>
+        <tr>
+          <td>MUL4S</td>
+          <td>0b01000101</td>
+        </tr>
+        <tr>
+          <td>MUL8</td>
+          <td>0b01000110</td>
+        </tr>
+        <tr>
+          <td>MUL8S</td>
+          <td>0b01000111</td>
+        </tr>
+        <tr>
+          <td rowspan="8">DIV</td>
+          <td rowspan="8">0b01001***</td>
+          <td>DIV1</td>
+          <td>0b01001000</td>
+        </tr>
+        <tr>
+          <td>DIV1S</td>
+          <td>0b01001001</td>
+        </tr>
+        <tr>
+          <td>DIV2</td>
+          <td>0b01001010</td>
+        </tr>
+        <tr>
+          <td>DIV2S</td>
+          <td>0b01001011</td>
+        </tr>
+        <tr>
+          <td>DIV4</td>
+          <td>0b01001100</td>
+        </tr>
+        <tr>
+          <td>DIV4S</td>
+          <td>0b01001101</td>
+        </tr>
+        <tr>
+          <td>DIV8</td>
+          <td>0b01001110</td>
+        </tr>
+        <tr>
+          <td>DIV8S</td>
+          <td>0b01001111</td>
+        </tr>
+        <tr>
+          <td rowspan="8">MOD</td>
+          <td rowspan="8">0b01010***</td>
+          <td>MOD1</td>
+          <td>0b01010000</td>
+        </tr>
+        <tr>
+          <td>MOD1S</td>
+          <td>0b01010001</td>
+        </tr>
+        <tr>
+          <td>MOD2</td>
+          <td>0b01010010</td>
+        </tr>
+        <tr>
+          <td>MOD2S</td>
+          <td>0b01010011</td>
+        </tr>
+        <tr>
+          <td>MOD4</td>
+          <td>0b01010100</td>
+        </tr>
+        <tr>
+          <td>MOD4S</td>
+          <td>0b01010101</td>
+        </tr>
+        <tr>
+          <td>MOD8</td>
+          <td>0b01010110</td>
+        </tr>
+        <tr>
+          <td>MOD8S</td>
+          <td>0b01010111</td>
+        </tr>
+        <tr>
+          <td rowspan="8">CMP</td>
+          <td rowspan="8">0b01011***</td>
+          <td>CMP1</td>
+          <td>0b01011000</td>
+        </tr>
+        <tr>
+          <td>CMP1S</td>
+          <td>0b01011001</td>
+        </tr>
+        <tr>
+          <td>CMP2</td>
+          <td>0b01011010</td>
+        </tr>
+        <tr>
+          <td>CMP2S</td>
+          <td>0b01011011</td>
+        </tr>
+        <tr>
+          <td>CMP4</td>
+          <td>0b01011100</td>
+        </tr>
+        <tr>
+          <td>CMP4S</td>
+          <td>0b01011101</td>
+        </tr>
+        <tr>
+          <td>CMP8</td>
+          <td>0b01011110</td>
+        </tr>
+        <tr>
+          <td>CMP8S</td>
+          <td>0b01011111</td>
+        </tr>
+        <tr>
+          <td rowspan="32">FPU/CTL Flow</td>
+          <td rowspan="32">0b011*****</td>
+          <td rowspan="24">FPU</td>
+          <td rowspan="24">0b0110****/0b01110***</td>
+          <td rowspan="4">FADD</td>
+          <td rowspan="4">0b011000**</td>
+          <td class="nsm">FADD_2</td>
+          <td class="nsm">0b01100000</td>
+        </tr>
+        <tr>
+          <td>FADD_4</td>
+          <td>0b01100001</td>
+        </tr>
+        <tr>
+          <td>FADD_8</td>
+          <td>0b01100010</td>
+        </tr>
+        <tr class="nsm">
+          <td>FADD_16</td>
+          <td>0b01100011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">FSUB</td>
+          <td rowspan="4">0b011001**</td>
+          <td class="nsm">FSUB_2</td>
+          <td class="nsm">0b01100100</td>
+        </tr>
+        <tr>
+          <td>FSUB_4</td>
+          <td>0b01100101</td>
+        </tr>
+        <tr>
+          <td>FSUB_8</td>
+          <td>0b01100110</td>
+        </tr>
+        <tr class="nsm">
+          <td>FSUB_16</td>
+          <td>0b01100111</td>
+        </tr>
+        <tr>
+          <td rowspan="4">FMUL</td>
+          <td rowspan="4">0b011010**</td>
+          <td class="nsm">FMUL_2</td>
+          <td class="nsm">0b01101000</td>
+        </tr>
+        <tr>
+          <td>FMUL_4</td>
+          <td>0b01101001</td>
+        </tr>
+        <tr>
+          <td>FMUL_8</td>
+          <td>0b01101010</td>
+        </tr>
+        <tr class="nsm">
+          <td>FMUL_16</td>
+          <td>0b01101011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">FDIV</td>
+          <td rowspan="4">0b011011**</td>
+          <td class="nsm">FDIV_2</td>
+          <td class="nsm">0b01101100</td>
+        </tr>
+        <tr>
+          <td>FDIV_4</td>
+          <td>0b01101101</td>
+        </tr>
+        <tr>
+          <td>FDIV_8</td>
+          <td>0b01101110</td>
+        </tr>
+        <tr class="nsm">
+          <td>FDIV_16</td>
+          <td>0b01101111</td>
+        </tr>
+        <tr>
+          <td rowspan="4">FMOD</td>
+          <td rowspan="4">0b011100**</td>
+          <td class="nsm">FMOD_2</td>
+          <td class="nsm">0b01110000</td>
+        </tr>
+        <tr>
+          <td>FMOD_4</td>
+          <td>0b01110001</td>
+        </tr>
+        <tr>
+          <td>FMOD_8</td>
+          <td>0b01110010</td>
+        </tr>
+        <tr class="nsm">
+          <td>FMOD_16</td>
+          <td>0b01110011</td>
+        </tr>
+        <tr>
+          <td rowspan="4">FCMP</td>
+          <td rowspan="4">0b011101**</td>
+          <td class="nsm">FCMP_2</td>
+          <td class="nsm">0b01110100</td>
+        </tr>
+        <tr>
+          <td>FCMP_4</td>
+          <td>0b01110101</td>
+        </tr>
+        <tr>
+          <td>FCMP_8</td>
+          <td>0b01110110</td>
+        </tr>
+        <tr class="nsm">
+          <td>FCMP_16</td>
+          <td>0b01110111</td>
+        </tr>
+        <tr>
+          <td rowspan="8">Control Flow</td>
+          <td rowspan="8">0b01111***</td>
+          <td rowspan="4">JMP</td>
+          <td rowspan="4">0b011110**</td>
+          <td>JMP</td>
+          <td>0b01111000</td>
+        </tr>
+        <tr>
+          <td>JMPIF</td>
+          <td>0b01111001</td>
+        </tr>
+        <tr>
+          <td>RJMP</td>
+          <td>0b01111010</td>
+        </tr>
+        <tr>
+          <td>RJMPIF</td>
+          <td>0b01111011</td>
+        </tr>
+        <tr>
+          <td rowspan="2">CALL</td>
+          <td rowspan="2">0b0111110*</td>
+          <td>CALL</td>
+          <td>0b01111100</td>
+        </tr>
+        <tr>
+          <td>RCALL</td>
+          <td>0b01111101</td>
+        </tr>
+        <tr>
+          <td rowspan="2">RET</td>
+          <td rowspan="2">0b0111111*</td>
+          <td>RET</td>
+          <td>0b01111110</td>
+        </tr>
+        <tr class="in_design">
+          <td>IRET</td>
+          <td>0b01111111</td>
+        </tr>
       </tbody>
     </table>
-  </div>
-  <table id="instructions" class="Isaac-Table">
-    <thead>
-      <tr>
-        <th>Group Name</th><th>Group Code</th>
-        <th>Sub-Group Name</th><th>Sub-Group Code</th>
-        <th>Base Name</th><th>Base Code</th>
-        <th>Variant</th><th>Code</th></tr>
-    <tbody>
-      <tr>
-        <td rowspan="8">Single Special</td><td rowspan="8">0b00000***</td><td rowspan="8">N/A</td><td rowspan="8">N/A</td>
-        <td>NOP</td><td>0b00000000</td>
-        <td>NOP</td><td>0b00000000</td></tr>
-      <tr>
-        <td>HLT</td><td>0b00000001</td>
-        <td>HLT</td><td>0b00000001</td></tr>
-      <tr>
-        <td>EQ0</td><td>0b00000010</td>
-        <td>EQ0</td><td>0b00000010</td></tr>
-      <tr>
-        <td>NE0</td><td>0b00000011</td>
-        <td>NE0</td><td>0b00000011</td></tr>
-      <tr>
-        <td>LT0</td><td>0b00000100</td>
-        <td>LT0</td><td>0b00000100</td></tr>
-      <tr>
-        <td>LE0</td><td>0b00000101</td>
-        <td>LE0</td><td>0b00000101</td></tr>
-      <tr>
-        <td>GT0</td><td>0b00000110</td>
-        <td>GT0</td><td>0b00000110</td></tr>
-      <tr>
-        <td>GE0</td><td>0b00000111</td>
-        <td>GE0</td><td>0b00000111</td></tr>
-      <tr>
-        <td rowspan="8">Extended</td><td rowspan="8">0b00001***</td>
-        <td rowspan="8">N/A</td><td rowspan="8">N/A</td>
-        <td>CONV</td><td>0b00001000</td>
-        <td>CONV</td><td>0b00001000</td></tr>
-      <tr>
-        <td>SWAP</td><td>0b00001001</td>
-        <td>SWAP</td><td>0b00001001</td></tr>
-      <tr>
-        <td>LOAD</td><td>0b00001010</td>
-        <td>LOAD</td><td>0b00001010</td></tr>
-      <tr>
-        <td>STOR</td><td>0b00001011</td>
-        <td>STOR</td><td>0b00001011</td></tr>
-      <tr>
-        <td>CALL_E</td><td>0b00001100</td>
-        <td>CALL_E</td><td>0b00001100</td></tr>
-      <tr>
-        <td>RET_E</td><td>0b00001101</td>
-        <td>RET_E</td><td>0b00001101</td></tr>
-      <tr class="inf">
-        <td>SYSREG</td><td>0b00001110</td>
-        <td>SYSREG</td><td>0b00001110</td></tr>
-      <tr class="in_design">
-        <td>INT</td><td>0b00001111</td>
-        <td>INT</td><td>0b00001111</td></tr>
-      <tr>
-        <td rowspan="16">Bit/Byte Manip</td><td rowspan="16">0b0001****</td>
-        <td rowspan="16">N/A</td><td rowspan="16">N/A</td>
-        <td rowspan="4">LSHIFT</td><td rowspan="4">0b000100**</td>
-        <td>LSHIFT1</td><td>0b00010000</td></tr>
-      <tr>
-        <td>LSHIFT2</td><td>0b00010001</td></tr>
-      <tr>
-        <td>LSHIFT4</td><td>0b00010010</td></tr>
-      <tr>
-        <td>LSHIFT8</td><td>0b00010011</td></tr>
-      <tr>
-        <td rowspan="4">RSHIFT</td><td rowspan="4">0b000101**</td>
-        <td>RSHIFT1</td><td>0b00010100</td></tr>
-      <tr>
-        <td>RSHIFT2</td><td>0b00010101</td></tr>
-      <tr>
-        <td>RSHIFT4</td><td>0b00010110</td></tr>
-      <tr>
-        <td>RSHIFT8</td><td>0b00010111</td></tr>
-      <tr class="deprecated">
-        <td rowspan="4">LROT</td><td rowspan="4">0b000110**</td>
-        <td>LROT1</td><td>0b00011000</td></tr>
-      <tr class="deprecated">
-        <td>LROT2</td><td>0b00011001</td></tr>
-      <tr class="deprecated">
-        <td>LROT4</td><td>0b00011010</td></tr>
-      <tr class="deprecated">
-        <td>LROT8</td><td>0b00011011</td></tr>
-      <tr class="deprecated">
-        <td rowspan="4">RROT</td><td rowspan="4">0b000111**</td>
-        <td>RROT1</td><td>0b00011100</td></tr>
-      <tr class="deprecated">
-        <td>RROT2</td><td>0b00011101</td></tr>
-      <tr class="deprecated">
-        <td>RROT4</td><td>0b00011110</td></tr>
-      <tr class="deprecated">
-        <td>RROT8</td><td>0b00011111</td></tr>
-      <tr>
-        <td rowspan="32">ALU Sign<br/>Independent</td><td rowspan="32">0b001*****</td>
-        <td rowspan="32">N/A</td><td rowspan="32">N/A</td>
-        <td rowspan="4">AND</td><td rowspan="4">0b001000**</td>
-        <td>AND1</td><td>0b00100000</td></tr>
-      <tr>
-        <td>AND2</td><td>0b00100001</td></tr>
-      <tr>
-        <td>AND4</td><td>0b00100010</td></tr>
-      <tr>
-        <td>AND8</td><td>0b00100011</td></tr>
-      <tr>
-        <td rowspan="4">OR</td><td rowspan="4">0b001001**</td>
-        <td>OR1</td><td>0b00100100</td></tr>
-      <tr>
-        <td>OR2</td><td>0b00100101</td></tr>
-      <tr>
-        <td>OR4</td><td>0b00100110</td></tr>
-      <tr>
-        <td>OR8</td><td>0b00100111</td></tr>
-      <tr>
-        <td rowspan="4">NOT</td><td rowspan="4">0b001010**</td>
-        <td>NOT1</td><td>0b00101000</td></tr>
-      <tr>
-        <td>NOT2</td><td>0b00101001</td></tr>
-      <tr>
-        <td>NOT4</td><td>0b00101010</td></tr>
-      <tr>
-        <td>NOT8</td><td>0b00101011</td></tr>
-      <tr>
-        <td rowspan="4">XOR</td><td rowspan="4">0b001011**</td>
-        <td>XOR1</td><td>0b00101100</td></tr>
-      <tr>
-        <td>XOR2</td><td>0b00101101</td></tr>
-      <tr>
-        <td>XOR4</td><td>0b00101110</td></tr>
-      <tr>
-        <td>XOR8</td><td>0b00101111</td></tr>
-      <tr>
-        <td rowspan="4">ADD</td><td rowspan="4">0b001100**</td>
-        <td>ADD1</td><td>0b00110000</td></tr>
-      <tr>
-        <td>ADD2</td><td>0b00110001</td></tr>
-      <tr>
-        <td>ADD4</td><td>0b00110010</td></tr>
-      <tr>
-        <td>ADD8</td><td>0b00110011</td></tr>
-      <tr>
-        <td rowspan="4">SUB</td><td rowspan="4">0b001101**</td>
-        <td>SUB1</td><td>0b00110100</td></tr>
-      <tr>
-        <td>SUB2</td><td>0b00110101</td></tr>
-      <tr>
-        <td>SUB4</td><td>0b00110110</td></tr>
-      <tr>
-        <td>SUB8</td><td>0b00110111</td></tr>
-      <tr>
-        <td rowspan="4">ADD_SP</td><td rowspan="4">0b001110**</td>
-        <td>ADD_SP1</td><td>0b00111000</td></tr>
-      <tr>
-        <td>ADD_SP2</td><td>0b00111001</td></tr>
-      <tr>
-        <td>ADD_SP4</td><td>0b00111010</td></tr>
-      <tr>
-        <td>ADD_SP8</td><td>0b00111011</td></tr>
-      <tr>
-        <td rowspan="4">RST_SP</td><td rowspan="4">0b001111**</td>
-        <td>RST_SP1</td><td>0b00111100</td></tr>
-      <tr>
-        <td>RST_SP2</td><td>0b00111101</td></tr>
-      <tr>
-        <td>RST_SP4</td><td>0b00111110</td></tr>
-      <tr>
-        <td>RST_SP8</td><td>0b00111111</td></tr>
-      <tr>
-        <td rowspan="32">ALU Sign Specific</td><td rowspan="32">0b010*****</td>
-        <td rowspan="32">N/A</td><td rowspan="32">N/A</td>
-        <td rowspan="8">MUL</td><td rowspan="8">0b01000***</td>
-        <td>MUL1</td><td>0b01000000</td></tr>
-      <tr>
-        <td>MUL1S</td><td>0b01000001</td></tr>
-      <tr>
-        <td>MUL2</td><td>0b01000010</td></tr>
-      <tr>
-        <td>MUL2S</td><td>0b01000011</td></tr>
-      <tr>
-        <td>MUL4</td><td>0b01000100</td></tr>
-      <tr>
-        <td>MUL4S</td><td>0b01000101</td></tr>
-      <tr>
-        <td>MUL8</td><td>0b01000110</td></tr>
-      <tr>
-        <td>MUL8S</td><td>0b01000111</td></tr>
-      <tr>
-        <td rowspan="8">DIV</td><td rowspan="8">0b01001***</td>
-        <td>DIV1</td><td>0b01001000</td></tr>
-      <tr>
-        <td>DIV1S</td><td>0b01001001</td></tr>
-      <tr>
-        <td>DIV2</td><td>0b01001010</td></tr>
-      <tr>
-        <td>DIV2S</td><td>0b01001011</td></tr>
-      <tr>
-        <td>DIV4</td><td>0b01001100</td></tr>
-      <tr>
-        <td>DIV4S</td><td>0b01001101</td></tr>
-      <tr>
-        <td>DIV8</td><td>0b01001110</td></tr>
-      <tr>
-        <td>DIV8S</td><td>0b01001111</td></tr>
-      <tr>
-        <td rowspan="8">MOD</td><td rowspan="8">0b01010***</td>
-        <td>MOD1</td><td>0b01010000</td></tr>
-      <tr>
-        <td>MOD1S</td><td>0b01010001</td></tr>
-      <tr>
-        <td>MOD2</td><td>0b01010010</td></tr>
-      <tr>
-        <td>MOD2S</td><td>0b01010011</td></tr>
-      <tr>
-        <td>MOD4</td><td>0b01010100</td></tr>
-      <tr>
-        <td>MOD4S</td><td>0b01010101</td></tr>
-      <tr>
-        <td>MOD8</td><td>0b01010110</td></tr>
-      <tr>
-        <td>MOD8S</td><td>0b01010111</td></tr>
-      <tr>
-        <td rowspan="8">CMP</td><td rowspan="8">0b01011***</td>
-        <td>CMP1</td><td>0b01011000</td></tr>
-      <tr>
-        <td>CMP1S</td><td>0b01011001</td></tr>
-      <tr>
-        <td>CMP2</td><td>0b01011010</td></tr>
-      <tr>
-        <td>CMP2S</td><td>0b01011011</td></tr>
-      <tr>
-        <td>CMP4</td><td>0b01011100</td></tr>
-      <tr>
-        <td>CMP4S</td><td>0b01011101</td></tr>
-      <tr>
-        <td>CMP8</td><td>0b01011110</td></tr>
-      <tr>
-        <td>CMP8S</td><td>0b01011111</td></tr>
-      <tr>
-        <td rowspan="32">FPU/CTL Flow</td><td rowspan="32">0b011*****</td>
-        <td rowspan="24">FPU</td><td rowspan="24">0b0110****/0b01110***</td>
-        <td rowspan="4">FADD</td><td rowspan="4">0b011000**</td>
-        <td class="nsm">FADD_2</td><td class="nsm">0b01100000</td></tr>
-      <tr>
-        <td>FADD_4</td><td>0b01100001</td></tr>
-      <tr>
-        <td>FADD_8</td><td>0b01100010</td></tr>
-      <tr class="nsm">
-        <td>FADD_16</td><td>0b01100011</td></tr>
-      <tr>
-        <td rowspan="4">FSUB</td><td rowspan="4">0b011001**</td>
-        <td class="nsm">FSUB_2</td><td class="nsm">0b01100100</td></tr>
-      <tr>
-        <td>FSUB_4</td><td>0b01100101</td></tr>
-      <tr>
-        <td>FSUB_8</td><td>0b01100110</td></tr>
-      <tr class="nsm">
-        <td>FSUB_16</td><td>0b01100111</td></tr>
-      <tr>
-        <td rowspan="4">FMUL</td><td rowspan="4">0b011010**</td>
-        <td class="nsm">FMUL_2</td><td class="nsm">0b01101000</td></tr>
-      <tr>
-        <td>FMUL_4</td><td>0b01101001</td></tr>
-      <tr>
-        <td>FMUL_8</td><td>0b01101010</td></tr>
-      <tr class="nsm">
-        <td>FMUL_16</td><td>0b01101011</td></tr>
-      <tr>
-        <td rowspan="4">FDIV</td><td rowspan="4">0b011011**</td>
-        <td class="nsm">FDIV_2</td><td class="nsm">0b01101100</td></tr>
-      <tr>
-        <td>FDIV_4</td><td>0b01101101</td></tr>
-      <tr>
-        <td>FDIV_8</td><td>0b01101110</td></tr>
-      <tr class="nsm">
-        <td>FDIV_16</td><td>0b01101111</td></tr>
-      <tr>
-        <td rowspan="4">FMOD</td><td rowspan="4">0b011100**</td>
-        <td class="nsm">FMOD_2</td><td class="nsm">0b01110000</td></tr>
-      <tr>
-        <td>FMOD_4</td><td>0b01110001</td></tr>
-      <tr>
-        <td>FMOD_8</td><td>0b01110010</td></tr>
-      <tr class="nsm">
-        <td>FMOD_16</td><td>0b01110011</td></tr>
-      <tr>
-        <td rowspan="4">FCMP</td><td rowspan="4">0b011101**</td>
-        <td class="nsm">FCMP_2</td><td class="nsm">0b01110100</td></tr>
-      <tr>
-        <td>FCMP_4</td><td>0b01110101</td></tr>
-      <tr>
-        <td>FCMP_8</td><td>0b01110110</td></tr>
-      <tr class="nsm">
-        <td>FCMP_16</td><td>0b01110111</td></tr>
-      <tr>
-        <td rowspan="8">Control Flow</td><td rowspan="8">0b01111***</td>
-        <td rowspan="4">JMP</td><td rowspan="4">0b011110**</td>
-        <td>JMP</td><td>0b01111000</td></tr>
-      <tr>
-        <td>JMPIF</td><td>0b01111001</td></tr>
-      <tr>
-        <td>RJMP</td><td>0b01111010</td></tr>
-      <tr>
-        <td>RJMPIF</td><td>0b01111011</td></tr>
-      <tr>
-        <td rowspan="2">CALL</td><td rowspan="2">0b0111110*</td>
-        <td>CALL</td><td>0b01111100</td></tr>
-      <tr>
-        <td>RCALL</td><td>0b01111101</td></tr>
-      <tr>
-        <td rowspan="2">RET</td><td rowspan="2">0b0111111*</td>
-        <td>RET</td><td>0b01111110</td></tr>
-      <tr class="in_design">
-        <td>IRET</td><td>0b01111111</td></tr>
-    </tbody>
-  </table>
-  <script>
-  class TwoDimArray {
-    constructor (w, h) {
-      this.data = [];
-      this.w = w;
-      this.h = h;
-      let Len = w * h;
-      this.data.length = Len;
-      for (let c = 0; c < Len; ++c) {
-        this.data[c] = null;
-      }
-    }
-    appendColumn (column) {
-      if (column.length !== this.h) {
-        throw new Error("column length must equal height");
-      }
-      let newData = [];
-      newData.length = this.data.length + this.h;
-      let newW = this.w + 1;
-      for (let y = 0; y < this.h; ++y) {
-        let off0 = y * this.w;
-        let off1 = y * newW;
-        for (let x = 0; x < this.w; ++x) {
-          newData[off1 + x] = this.data[off0 + x];
-        }
-        newData[off1 + this.w] = column[y];
-      }
-      this.w = newW;
-      this.data = newData;
-    }
-    extendColumns (columns) {
-      for (let c = 0; c < columns.length; ++c) {
-        if (columns[c].length !== this.h) {
-          throw new Error("column length must equal height");
-        }
-      }
-      let newData = [];
-      newData.length = this.data.length + this.h * columns.length;
-      let newW = this.w + columns.length;
-      for (let y = 0; y < this.h; ++y) {
-        let off0 = y * this.w;
-        let off1 = y * newW;
-        for (let x = 0; x < this.w; ++x) {
-          newData[off1 + x] = this.data[off0 + x];
-        }
-        for (let x = this.w; x < newW; ++x) {
-          newData[off1 + x] = columns[x - this.w][y];
-        }
-      }
-      this.w = newW;
-      this.data = newData;
-    }
-    appendRow (row) {
-      if (row.length !== this.w) {
-        throw new Error("row length must equal width");
-      }
-      this.data = this.data.concat(row);
-      this.h += 1;
-    }
-    extendRows (rows) {
-      for (let c = 0; c < rows.length; ++c) {
-        if (rows[c].length !== this.h) {
-          throw new Error("row length must equal width");
-        }
-      }
-      this.data = rows.reduce((row, total) => total.concat(row), this.data);
-      this.h += rows.length;
-    }
-    index (x, y) {
-      if (x >= this.w) {
-        throw new Error("x must be less than width");
-      }
-      if (y >= this.h) {
-        throw new Error("y must be less than height");
-      }
-      return y * this.w + x
-    }
-    get (x, y) {
-      return this.data[this.index(x, y)];
-    }
-    set (x, y, v) {
-      return this.data[this.index(x, y)] = v;
-    }
-  }
-  let NullArray = function (sz) {
-    let rtn = [];
-    rtn.length = sz;
-    for (let c = 0; c < sz; ++c) {
-      rtn[c] = null;
-    }
-    return rtn;
-  }
-  class TableHelper {
-    constructor (tblDom) {
-      let tbodies = tblDom.getElementsByTagName("tbody");
-      if (tbodies.length !== 1) {
-        throw new Error("Expected exactly 1 <tbody>");
-      }
-      this.tbody = tbodies[0];
-      this.rows = this.tbody.getElementsByTagName("tr");
-      this.cells2D = new TwoDimArray(0, this.rows.length);
-      for (let c = 0; c < this.rows.length; ++c) {
-        let row = this.rows[c];
-        let posNull = 0;
-        while (posNull < this.cells2D.w && this.cells2D.get(posNull, c) != null) {
-          ++posNull;
-        }
-        for (let c0 = 0; c0 < row.cells.length; ++c0) {
-          let cell = row.cells[c0];
-          while (posNull + cell.colSpan > this.cells2D.w) {
-            this.cells2D.appendColumn(NullArray(this.cells2D.h));
+    <script>
+      class TwoDimArray {
+        constructor(w, h) {
+          this.data = [];
+          this.w = w;
+          this.h = h;
+          let Len = w * h;
+          this.data.length = Len;
+          for (let c = 0; c < Len; ++c) {
+            this.data[c] = null;
           }
-          for (let x = 0; x < cell.colSpan; ++x) {
-            let offX = posNull++;
-            for (let y = 0; y < cell.rowSpan; ++y) {
-              let offY = c + y;
-              if (this.cells2D.get(offX, offY) != null) {
-                throw new Error("Bad colspan x=" + offX + ",y=" + offY);
+        }
+        appendColumn(column) {
+          if (column.length !== this.h) {
+            throw new Error("column length must equal height");
+          }
+          let newData = [];
+          newData.length = this.data.length + this.h;
+          let newW = this.w + 1;
+          for (let y = 0; y < this.h; ++y) {
+            let off0 = y * this.w;
+            let off1 = y * newW;
+            for (let x = 0; x < this.w; ++x) {
+              newData[off1 + x] = this.data[off0 + x];
+            }
+            newData[off1 + this.w] = column[y];
+          }
+          this.w = newW;
+          this.data = newData;
+        }
+        extendColumns(columns) {
+          for (let c = 0; c < columns.length; ++c) {
+            if (columns[c].length !== this.h) {
+              throw new Error("column length must equal height");
+            }
+          }
+          let newData = [];
+          newData.length = this.data.length + this.h * columns.length;
+          let newW = this.w + columns.length;
+          for (let y = 0; y < this.h; ++y) {
+            let off0 = y * this.w;
+            let off1 = y * newW;
+            for (let x = 0; x < this.w; ++x) {
+              newData[off1 + x] = this.data[off0 + x];
+            }
+            for (let x = this.w; x < newW; ++x) {
+              newData[off1 + x] = columns[x - this.w][y];
+            }
+          }
+          this.w = newW;
+          this.data = newData;
+        }
+        appendRow(row) {
+          if (row.length !== this.w) {
+            throw new Error("row length must equal width");
+          }
+          this.data = this.data.concat(row);
+          this.h += 1;
+        }
+        extendRows(rows) {
+          for (let c = 0; c < rows.length; ++c) {
+            if (rows[c].length !== this.h) {
+              throw new Error("row length must equal width");
+            }
+          }
+          this.data = rows.reduce((row, total) => total.concat(row), this.data);
+          this.h += rows.length;
+        }
+        index(x, y) {
+          if (x >= this.w) {
+            throw new Error("x must be less than width");
+          }
+          if (y >= this.h) {
+            throw new Error("y must be less than height");
+          }
+          return y * this.w + x;
+        }
+        get(x, y) {
+          return this.data[this.index(x, y)];
+        }
+        set(x, y, v) {
+          return (this.data[this.index(x, y)] = v);
+        }
+      }
+      let NullArray = function (sz) {
+        let rtn = [];
+        rtn.length = sz;
+        for (let c = 0; c < sz; ++c) {
+          rtn[c] = null;
+        }
+        return rtn;
+      };
+      class TableHelper {
+        constructor(tblDom) {
+          let tbodies = tblDom.getElementsByTagName("tbody");
+          if (tbodies.length !== 1) {
+            throw new Error("Expected exactly 1 <tbody>");
+          }
+          this.tbody = tbodies[0];
+          this.rows = this.tbody.getElementsByTagName("tr");
+          this.cells2D = new TwoDimArray(0, this.rows.length);
+          for (let c = 0; c < this.rows.length; ++c) {
+            let row = this.rows[c];
+            let posNull = 0;
+            while (
+              posNull < this.cells2D.w &&
+              this.cells2D.get(posNull, c) != null
+            ) {
+              ++posNull;
+            }
+            for (let c0 = 0; c0 < row.cells.length; ++c0) {
+              let cell = row.cells[c0];
+              while (posNull + cell.colSpan > this.cells2D.w) {
+                this.cells2D.appendColumn(NullArray(this.cells2D.h));
               }
-              this.cells2D.set(offX, offY, cell);
+              for (let x = 0; x < cell.colSpan; ++x) {
+                let offX = posNull++;
+                for (let y = 0; y < cell.rowSpan; ++y) {
+                  let offY = c + y;
+                  if (this.cells2D.get(offX, offY) != null) {
+                    throw new Error("Bad colspan x=" + offX + ",y=" + offY);
+                  }
+                  this.cells2D.set(offX, offY, cell);
+                }
+              }
             }
           }
         }
       }
-    }
-  }
-  let IsaacTable = document.getElementById("instructions");
-  let errorsDiv = document.getElementById("errors");
-  window.zz = new TableHelper(IsaacTable);
-  {
-    let InstrObject = {};
-    let cells2D = window.zz.cells2D;
-    for (let c = 0; c < cells2D.h;) {
-      let td = cells2D.get(4, c);
-      let name = td.textContent;
-      if (InstrObject[name] == null) {
-        InstrObject[name] = c;
-      } else {
-        let str = "Name " + name + " was encountered more than once at row " + InstrObject[name] + " and row " + c;
-        let p = document.createElement("p");
-        p.innerText = str;
-        p.style.color = "red";
-        errorsDiv.appendChild(p)
-        errorsDiv.appendChild(document.createElement("br"));
-        console.warn(str);
+      let IsaacTable = document.getElementById("instructions");
+      let errorsDiv = document.getElementById("errors");
+      window.zz = new TableHelper(IsaacTable);
+      {
+        let InstrObject = {};
+        let cells2D = window.zz.cells2D;
+        for (let c = 0; c < cells2D.h; ) {
+          let td = cells2D.get(4, c);
+          let name = td.textContent;
+          if (InstrObject[name] == null) {
+            InstrObject[name] = c;
+          } else {
+            let str =
+              "Name " +
+              name +
+              " was encountered more than once at row " +
+              InstrObject[name] +
+              " and row " +
+              c;
+            let p = document.createElement("p");
+            p.innerText = str;
+            p.style.color = "red";
+            errorsDiv.appendChild(p);
+            errorsDiv.appendChild(document.createElement("br"));
+            console.warn(str);
+          }
+          let origHTML = td.innerHTML;
+          td.innerHTML =
+            '<a href="' +
+            encodeURIComponent(name) +
+            '.html">' +
+            origHTML +
+            "</a>";
+          c += td.rowSpan;
+        }
       }
-      let origHTML = td.innerHTML;
-      td.innerHTML = '<a href="' + encodeURIComponent(name) + '.html">' + origHTML + '</a>';
-      c += td.rowSpan;
-    }
-  }
-  function OutputCPP_BC_Enum(Name) {
-    const cells2D = window.zz.cells2D;
-    let Rtn = "enum " + Name + " {\n";
-    for (let c = 0; c < cells2D.h; ++c) {
-      Rtn += "BC_" + cells2D.get(6, c).innerText + " = " + Number(cells2D.get(7, c).innerText) + ",\n";
-    }
-    Rtn += "};";
-    return Rtn;
-  }
-  function OutputPython_BC_Enum(Name) {
-    const cells2D = window.zz.cells2D;
-    let Tab = "";
-    let Rtn = "";
-    if (Name != null) {
-      Rtn += "class " + Name + ":\n";
-      Tab = "    ";
-    }
-    for (let c = 0; c < cells2D.h; ++c) {
-      Rtn += Tab + "BC_" + cells2D.get(6, c).innerText + " = " + Number(cells2D.get(7, c).innerText) + "\n";
-    }
-    return Rtn;
-  }
-  function OutputJSON_BC_Enum() {
-    const cells2D = window.zz.cells2D;
-    let Rtn = {};
-    for (let c = 0; c < cells2D.h; ++c) {
-      Rtn[cells2D.get(6, c).innerText] = Number(cells2D.get(7, c).innerText);
-    }
-    return JSON.stringify(Rtn);
-  }
-  </script>
-</body>
+      function OutputCPP_BC_Enum(Name) {
+        const cells2D = window.zz.cells2D;
+        let Rtn = "enum " + Name + " {\n";
+        for (let c = 0; c < cells2D.h; ++c) {
+          Rtn +=
+            "BC_" +
+            cells2D.get(6, c).innerText +
+            " = " +
+            Number(cells2D.get(7, c).innerText) +
+            ",\n";
+        }
+        Rtn += "};";
+        return Rtn;
+      }
+      function OutputPython_BC_Enum(Name) {
+        const cells2D = window.zz.cells2D;
+        let Tab = "";
+        let Rtn = "";
+        if (Name != null) {
+          Rtn += "class " + Name + ":\n";
+          Tab = "    ";
+        }
+        for (let c = 0; c < cells2D.h; ++c) {
+          Rtn +=
+            Tab +
+            "BC_" +
+            cells2D.get(6, c).innerText +
+            " = " +
+            Number(cells2D.get(7, c).innerText) +
+            "\n";
+        }
+        return Rtn;
+      }
+      function OutputJSON_BC_Enum() {
+        const cells2D = window.zz.cells2D;
+        let Rtn = {};
+        for (let c = 0; c < cells2D.h; ++c) {
+          Rtn[cells2D.get(6, c).innerText] = Number(
+            cells2D.get(7, c).innerText
+          );
+        }
+        return JSON.stringify(Rtn);
+      }
+    </script>
+  </body>
 </html>

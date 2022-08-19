@@ -1,31 +1,41 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | RST_SP</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>RST_SP ("Stack Decrement" Instruction)</h1>
-  <p>The RST_SP instructions, number 60 (0x3C) through 63 (0x3F), all pop 1, N byte operand off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-    </ul>
-    <span>->RST_SP-></span>
-    <ul class="stack">
-      <li>NONE(Stack Changed)</li>
-    </ul>
-  </div>
-  <p>The operand popped off the stack is A, and there is nothing pushed onto the stack.</p>
-  <p>The meaning of stack decrement is a reduction of the stack (like a pop, sp increases).</p>
-  <p>RST_SP1 works on an unsigned 8 bit integer (N = 1 byte).</p>
-  <p>RST_SP2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
-  <p>RST_SP4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
-  <p>RST_SP8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
-  <p>RST_SP1 is assigned opcode 60 (0x3C).</p>
-  <p>RST_SP2 is assigned opcode 61 (0x3D).</p>
-  <p>RST_SP4 is assigned opcode 62 (0x3E).</p>
-  <p>RST_SP8 is assigned opcode 63 (0x3F).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | RST_SP</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>RST_SP ("Stack Decrement" Instruction)</h1>
+    <p>
+      The RST_SP instructions, number 60 (0x3C) through 63 (0x3F), all pop 1, N
+      byte operand off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+      </ul>
+      <span>->RST_SP-></span>
+      <ul class="stack">
+        <li>NONE(Stack Changed)</li>
+      </ul>
+    </div>
+    <p>
+      The operand popped off the stack is A, and there is nothing pushed onto
+      the stack.
+    </p>
+    <p>
+      The meaning of stack decrement is a reduction of the stack (like a pop, sp
+      increases).
+    </p>
+    <p>RST_SP1 works on an unsigned 8 bit integer (N = 1 byte).</p>
+    <p>RST_SP2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
+    <p>RST_SP4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
+    <p>RST_SP8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
+    <p>RST_SP1 is assigned opcode 60 (0x3C).</p>
+    <p>RST_SP2 is assigned opcode 61 (0x3D).</p>
+    <p>RST_SP4 is assigned opcode 62 (0x3E).</p>
+    <p>RST_SP8 is assigned opcode 63 (0x3F).</p>
+  </body>
 </html>

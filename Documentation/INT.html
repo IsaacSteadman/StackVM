@@ -1,26 +1,44 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | INT</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>INT (Interrupt Instruction)</h1>
-  <p>INT is instruction 15 (0x0F) and instructs the processor to call the address specified in the Interrupt Descriptor Table.</p>
-  <p>The Interrupt code is specified as an immediate byte following the INT instruction</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>...Interrupt Specific Args</li>
-    </ul>
-    <span>->INT(n)-></span>
-    <ul class="stack">
-      <li>...Interrupt Specific Result</li>
-    </ul>
-  </div>
-  <p>The Interrupt Descriptor Table (IDT) is a contiguous array of 256 8-byte pointers to executable code.</p>
-  <p>The first 32 (0x00 thru 0x3F) interrupts are reserved for system* use.</p>
-  <p>*System: system use may include hardware defined behavior instead of a call to the code address specified in the IDT</p>
-  <p><strong>NOTE:</strong> As of the writting of this documentation (3:05 PM CST November 5, 2017), there is no way to modify or initialized the IDT</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | INT</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>INT (Interrupt Instruction)</h1>
+    <p>
+      INT is instruction 15 (0x0F) and instructs the processor to call the
+      address specified in the Interrupt Descriptor Table.
+    </p>
+    <p>
+      The Interrupt code is specified as an immediate byte following the INT
+      instruction
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>...Interrupt Specific Args</li>
+      </ul>
+      <span>->INT(n)-></span>
+      <ul class="stack">
+        <li>...Interrupt Specific Result</li>
+      </ul>
+    </div>
+    <p>
+      The Interrupt Descriptor Table (IDT) is a contiguous array of 256 8-byte
+      pointers to executable code.
+    </p>
+    <p>
+      The first 32 (0x00 thru 0x3F) interrupts are reserved for system* use.
+    </p>
+    <p>
+      *System: system use may include hardware defined behavior instead of a
+      call to the code address specified in the IDT
+    </p>
+    <p>
+      <strong>NOTE:</strong> As of the writting of this documentation (3:05 PM
+      CST November 5, 2017), there is no way to modify or initialized the IDT
+    </p>
+  </body>
 </html>

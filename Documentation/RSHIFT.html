@@ -1,31 +1,38 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | RSHIFT</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>RSHIFT ("Right Bitwise Shift" Instruction)</h1>
-  <p>The RSHIFT instructions, number 20 (0x14) through 23 (0x17), all pop a byte off the stack indicating how many bits to shift by.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A (n bytes)</li>
-      <li>B (1 byte)</li>
-    </ul>
-    <span>->RSHIFT-></span>
-    <ul class="stack">
-      <li>Result (n bytes)</li>
-    </ul>
-  </div>
-  <p>All variants push the same number of bytes as were popped off minus the byte for the shift. The bits are shift towards the least significant bit.</p>
-  <p>RSHIFT1 shifts an unsigned 8 bit integer (1 byte).</p>
-  <p>RSHIFT2 shifts an unsigned 16 bit integer (2 byte).</p>
-  <p>RSHIFT4 shifts an unsigned 32 bit integer (4 byte).</p>
-  <p>RSHIFT8 shifts an unsigned 64 bit integer (8 byte).</p>
-  <p>RSHIFT1 is assigned opcode 20 (0x14).</p>
-  <p>RSHIFT2 is assigned opcode 21 (0x15).</p>
-  <p>RSHIFT4 is assigned opcode 22 (0x16).</p>
-  <p>RSHIFT8 is assigned opcode 23 (0x17).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | RSHIFT</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>RSHIFT ("Right Bitwise Shift" Instruction)</h1>
+    <p>
+      The RSHIFT instructions, number 20 (0x14) through 23 (0x17), all pop a
+      byte off the stack indicating how many bits to shift by.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A (n bytes)</li>
+        <li>B (1 byte)</li>
+      </ul>
+      <span>->RSHIFT-></span>
+      <ul class="stack">
+        <li>Result (n bytes)</li>
+      </ul>
+    </div>
+    <p>
+      All variants push the same number of bytes as were popped off minus the
+      byte for the shift. The bits are shift towards the least significant bit.
+    </p>
+    <p>RSHIFT1 shifts an unsigned 8 bit integer (1 byte).</p>
+    <p>RSHIFT2 shifts an unsigned 16 bit integer (2 byte).</p>
+    <p>RSHIFT4 shifts an unsigned 32 bit integer (4 byte).</p>
+    <p>RSHIFT8 shifts an unsigned 64 bit integer (8 byte).</p>
+    <p>RSHIFT1 is assigned opcode 20 (0x14).</p>
+    <p>RSHIFT2 is assigned opcode 21 (0x15).</p>
+    <p>RSHIFT4 is assigned opcode 22 (0x16).</p>
+    <p>RSHIFT8 is assigned opcode 23 (0x17).</p>
+  </body>
 </html>

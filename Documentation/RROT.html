@@ -1,31 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | RROT</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>RROT ("Right Bitwise Rotate" Instruction)</h1>
-  <p>The RROT instructions, number 28 (0x1C) through 31 (0x1F), all pop a byte off the stack indicating how many bits to rotate by.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A (n bytes)</li>
-      <li>B (1 byte)</li>
-    </ul>
-    <span>->RROT-></span>
-    <ul class="stack">
-      <li>Result (n bytes)</li>
-    </ul>
-  </div>
-  <p>All variants push the same number of bytes as were popped off, minus the byte for the shift. The bits are rotated towards the least significant bit.</p>
-  <p>RROT1 rotates an unsigned 8 bit integer (1 byte).</p>
-  <p>RROT2 rotates an unsigned 16 bit integer (2 byte).</p>
-  <p>RROT4 rotates an unsigned 32 bit integer (4 byte).</p>
-  <p>RROT8 rotates an unsigned 64 bit integer (8 byte).</p>
-  <p>RROT1 is assigned opcode 28 (0x1C).</p>
-  <p>RROT2 is assigned opcode 29 (0x1D).</p>
-  <p>RROT4 is assigned opcode 30 (0x1E).</p>
-  <p>RROT8 is assigned opcode 31 (0x1F).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | RROT</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>RROT ("Right Bitwise Rotate" Instruction)</h1>
+    <p>
+      The RROT instructions, number 28 (0x1C) through 31 (0x1F), all pop a byte
+      off the stack indicating how many bits to rotate by.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A (n bytes)</li>
+        <li>B (1 byte)</li>
+      </ul>
+      <span>->RROT-></span>
+      <ul class="stack">
+        <li>Result (n bytes)</li>
+      </ul>
+    </div>
+    <p>
+      All variants push the same number of bytes as were popped off, minus the
+      byte for the shift. The bits are rotated towards the least significant
+      bit.
+    </p>
+    <p>RROT1 rotates an unsigned 8 bit integer (1 byte).</p>
+    <p>RROT2 rotates an unsigned 16 bit integer (2 byte).</p>
+    <p>RROT4 rotates an unsigned 32 bit integer (4 byte).</p>
+    <p>RROT8 rotates an unsigned 64 bit integer (8 byte).</p>
+    <p>RROT1 is assigned opcode 28 (0x1C).</p>
+    <p>RROT2 is assigned opcode 29 (0x1D).</p>
+    <p>RROT4 is assigned opcode 30 (0x1E).</p>
+    <p>RROT8 is assigned opcode 31 (0x1F).</p>
+  </body>
 </html>

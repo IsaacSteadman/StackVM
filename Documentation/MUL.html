@@ -1,36 +1,43 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | MUL</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>MUL (Multiply Instruction)</h1>
-  <p>The MUL instructions, number 64 (0x40) through 71 (0x47), all pop 2, N byte operands off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-      <li>B</li>
-    </ul>
-    <span>->MUL-></span>
-    <ul class="stack">
-      <li>Result</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is B, the second popped is A.</p>
-  <p>All variants push a N byte unsigned integer onto the stack that represents the equivalent C expression: A * B</p>
-  <p>MUL1(S) works on a 8 bit integer (N = 1 byte).</p>
-  <p>MUL2(S) works on a 16 bit integer (N = 2 bytes).</p>
-  <p>MUL4(S) works on a 32 bit integer (N = 4 bytes).</p>
-  <p>MUL8(S) works on a 64 bit integer (N = 8 bytes).</p>
-  <p>MUL1 is assigned opcode 64 (0x40).</p>
-  <p>MUL1S is assigned opcode 65 (0x41).</p>
-  <p>MUL2 is assigned opcode 66 (0x42).</p>
-  <p>MUL2S is assigned opcode 67 (0x43).</p>
-  <p>MUL4 is assigned opcode 68 (0x44).</p>
-  <p>MUL4S is assigned opcode 69 (0x45).</p>
-  <p>MUL8 is assigned opcode 70 (0x46).</p>
-  <p>MUL8S is assigned opcode 71 (0x47).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | MUL</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>MUL (Multiply Instruction)</h1>
+    <p>
+      The MUL instructions, number 64 (0x40) through 71 (0x47), all pop 2, N
+      byte operands off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+        <li>B</li>
+      </ul>
+      <span>->MUL-></span>
+      <ul class="stack">
+        <li>Result</li>
+      </ul>
+    </div>
+    <p>The first operand popped off the stack is B, the second popped is A.</p>
+    <p>
+      All variants push a N byte unsigned integer onto the stack that represents
+      the equivalent C expression: A * B
+    </p>
+    <p>MUL1(S) works on a 8 bit integer (N = 1 byte).</p>
+    <p>MUL2(S) works on a 16 bit integer (N = 2 bytes).</p>
+    <p>MUL4(S) works on a 32 bit integer (N = 4 bytes).</p>
+    <p>MUL8(S) works on a 64 bit integer (N = 8 bytes).</p>
+    <p>MUL1 is assigned opcode 64 (0x40).</p>
+    <p>MUL1S is assigned opcode 65 (0x41).</p>
+    <p>MUL2 is assigned opcode 66 (0x42).</p>
+    <p>MUL2S is assigned opcode 67 (0x43).</p>
+    <p>MUL4 is assigned opcode 68 (0x44).</p>
+    <p>MUL4S is assigned opcode 69 (0x45).</p>
+    <p>MUL8 is assigned opcode 70 (0x46).</p>
+    <p>MUL8S is assigned opcode 71 (0x47).</p>
+  </body>
 </html>

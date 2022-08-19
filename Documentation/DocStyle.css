@@ -1,3 +1,8 @@
+body {
+  background-color: white;
+  color: black;
+}
+
 .Isaac-Table {
   border: 1px solid black;
 }
@@ -8,28 +13,111 @@
 }
 .Isaac-Table td {
   border: 1px solid black;
-  background-color: cyan;
+  background-color: #0ff;
 }
 /* will be supported soon */
 .Isaac-Table tr.in_design td, .Isaac-Table td.in_design {
-  background-color: green;
+  background-color: #008000;
   color: white;
 }
 /* not supported but might be in the future */
 .Isaac-Table tr.nsm td, .Isaac-Table td.nsm {
+  background-color: #00f;
+  color: white;
+}
+.Isaac-Table tr.inf td, .Isaac-Table td.inf {
+  background-color: #ff0;
+}
+.Isaac-Table tr.deprecated td, .Isaac-Table td.deprecated {
+  background-color: #ffa500;
+}
+.Isaac-Table tr.ns td, .Isaac-Table td.ns{
+  background-color: #f00;
+}
+.Isaac-Table tr.ns td, .Isaac-Table td.unused{
+  background-color: #777;
+}
+/* TODO this */
+.Isaac-Table tr.nsm td a:link {
+  color: #BF0;
+}
+.Isaac-Table tr.nsm td a:link:hover {
+  color: #DF3;
+}
+.Isaac-Table tr.nsm td a:visited:hover {
+  color: #FD3;
+}
+.Isaac-Table tr.nsm td a:visited {
+  color: #FB0;
+}
+.Isaac-Table tr.nsm td a:active {
+  color: #FF7;
+}
+.kw-var {
+  color:#00f;
+  font-weight: bold;
+}
+.kw-type {
+  color:#F0F;
+  font-weight: bold;
+}
+.section {
+  border: solid 1px #808080;
+  margin: 10px;
+  padding: 4px;
+}
+ul.stack {
+  list-style-type: none;
+  display: inline-block;
+  padding: 0px;
+}
+ul.stack>li{
+  /* float: left;*/
+  display: inline;
+  padding: 10px;
+  border: solid 1px black;
+  background-color: #0C0;
+}
+
+
+
+
+body.dark-mode {
+  background-color: black;
+  color: white;
+}
+body.dark-mode .Isaac-Table {
+  border: 1px solid white;
+}
+body.dark-mode .Isaac-Table th {
+  border: 2px solid white;
+  background-color: #444;
+  color: white;
+}
+body.dark-mode .Isaac-Table td {
+  border: 1px solid white;
+  background-color: #077;
+}
+/* will be supported soon */
+body.dark-mode .Isaac-Table tr.in_design td, .Isaac-Table td.in_design {
+  background-color: #060;
+  color: white;
+}
+/* not supported but might be in the future */
+body.dark-mode .Isaac-Table tr.nsm td, .Isaac-Table td.nsm {
   background-color: blue;
   color: white;
 }
 .Isaac-Table tr.inf td, .Isaac-Table td.inf {
-  background-color: yellow;
+  background-color: #aa0;
 }
 .Isaac-Table tr.deprecated td, .Isaac-Table td.deprecated {
-  background-color: orange;
+  background-color: #a60;
 }
 .Isaac-Table tr.ns td, .Isaac-Table td.ns{
-  background-color: red;
+  background-color: #a00;
 }
-.Isaac-Table tr.ns td, .Isaac-Table td.unused{
+.Isaac-Table tr.unused td, .Isaac-Table td.unused{
   background-color: #777;
 }
 /* TODO this */
@@ -70,6 +158,6 @@ ul.stack>li{
   /* float: left;*/
   display: inline;
   padding: 10px;
-  border: solid 1px black;
-  background-color: #0C0;
+  border: solid 1px white;
+  background-color: #070;
 }

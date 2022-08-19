@@ -1,31 +1,38 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | LSHIFT</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>LSHIFT ("Left Bitwise Shift" Instruction)</h1>
-  <p>The LSHIFT instructions, number 16 (0x10) through 19 (0x13), all pop a byte off the stack indicating how many bits to shift by.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A (n bytes)</li>
-      <li>B (1 byte)</li>
-    </ul>
-    <span>->LSHIFT-></span>
-    <ul class="stack">
-      <li>Result (n bytes)</li>
-    </ul>
-  </div>
-  <p>All variants push the same number of bytes as were popped off minus the byte for the shift. The bits are shift towards the most significant bit.</p>
-  <p>LSHIFT1 shifts an unsigned 8 bit integer (1 byte).</p>
-  <p>LSHIFT2 shifts an unsigned 16 bit integer (2 byte).</p>
-  <p>LSHIFT4 shifts an unsigned 32 bit integer (4 byte).</p>
-  <p>LSHIFT8 shifts an unsigned 64 bit integer (8 byte).</p>
-  <p>LSHIFT1 is assigned opcode 16 (0x10).</p>
-  <p>LSHIFT2 is assigned opcode 17 (0x11).</p>
-  <p>LSHIFT4 is assigned opcode 18 (0x12).</p>
-  <p>LSHIFT8 is assigned opcode 19 (0x13).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | LSHIFT</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>LSHIFT ("Left Bitwise Shift" Instruction)</h1>
+    <p>
+      The LSHIFT instructions, number 16 (0x10) through 19 (0x13), all pop a
+      byte off the stack indicating how many bits to shift by.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A (n bytes)</li>
+        <li>B (1 byte)</li>
+      </ul>
+      <span>->LSHIFT-></span>
+      <ul class="stack">
+        <li>Result (n bytes)</li>
+      </ul>
+    </div>
+    <p>
+      All variants push the same number of bytes as were popped off minus the
+      byte for the shift. The bits are shift towards the most significant bit.
+    </p>
+    <p>LSHIFT1 shifts an unsigned 8 bit integer (1 byte).</p>
+    <p>LSHIFT2 shifts an unsigned 16 bit integer (2 byte).</p>
+    <p>LSHIFT4 shifts an unsigned 32 bit integer (4 byte).</p>
+    <p>LSHIFT8 shifts an unsigned 64 bit integer (8 byte).</p>
+    <p>LSHIFT1 is assigned opcode 16 (0x10).</p>
+    <p>LSHIFT2 is assigned opcode 17 (0x11).</p>
+    <p>LSHIFT4 is assigned opcode 18 (0x12).</p>
+    <p>LSHIFT8 is assigned opcode 19 (0x13).</p>
+  </body>
 </html>

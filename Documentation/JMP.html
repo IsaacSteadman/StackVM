@@ -1,33 +1,43 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | JMP</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>JMP (Jump Instruction)</h1>
-  <p>The JMP instructions, number 56 (0x38) through 59 (0x3B), all pop 1, N byte operand off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>B (JMPIF variants)</li>
-      <li>A</li>
-    </ul>
-    <span>->JMP-></span>
-    <ul class="stack">
-      <li>NONE</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is 8 byte integer A, and there is nothing pushed onto the stack.</p>
-  <p>If the instruction is conditional a 1 byte boolean B is popped off the stack, otherwise A is the only operand popped off the stack.</p>
-  <p>If the instruction is relative, A is signed, otherwise A is unsigned.</p>
-  <p>JMP performs an absolute unconditional jump (ip = A).</p>
-  <p>JMPIF performs an absolute conditional jump (ip = B ? A : ip).</p>
-  <p>RJMP performs a relative unconditional jump (ip += A).</p>
-  <p>RJMPIF performs a relative conditional jump (ip += B ? A : 0).</p>
-  <p>JMP is assigned opcode 120 (0x78).</p>
-  <p>JMPIF is assigned opcode 121 (0x79).</p>
-  <p>RJMP is assigned opcode 122 (0x7A).</p>
-  <p>RJMPIF is assigned opcode 123 (0x7B).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | JMP</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>JMP (Jump Instruction)</h1>
+    <p>
+      The JMP instructions, number 56 (0x38) through 59 (0x3B), all pop 1, N
+      byte operand off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>B (JMPIF variants)</li>
+        <li>A</li>
+      </ul>
+      <span>->JMP-></span>
+      <ul class="stack">
+        <li>NONE</li>
+      </ul>
+    </div>
+    <p>
+      The first operand popped off the stack is 8 byte integer A, and there is
+      nothing pushed onto the stack.
+    </p>
+    <p>
+      If the instruction is conditional a 1 byte boolean B is popped off the
+      stack, otherwise A is the only operand popped off the stack.
+    </p>
+    <p>If the instruction is relative, A is signed, otherwise A is unsigned.</p>
+    <p>JMP performs an absolute unconditional jump (ip = A).</p>
+    <p>JMPIF performs an absolute conditional jump (ip = B ? A : ip).</p>
+    <p>RJMP performs a relative unconditional jump (ip += A).</p>
+    <p>RJMPIF performs a relative conditional jump (ip += B ? A : 0).</p>
+    <p>JMP is assigned opcode 120 (0x78).</p>
+    <p>JMPIF is assigned opcode 121 (0x79).</p>
+    <p>RJMP is assigned opcode 122 (0x7A).</p>
+    <p>RJMPIF is assigned opcode 123 (0x7B).</p>
+  </body>
 </html>

@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>StackVM Instruction Documentation | XOR</title>
-  <link rel="stylesheet" type="text/css" href="DocStyle.css"/>
-</head>
-<body>
-  <h1>XOR ("Bitwise Xor" Instruction)</h1>
-  <p>The XOR instructions, number 44 (0x2C) through 47 (0x2F), all pop 2, N byte operands off the stack.</p>
-  <div>
-    <h3>Stack Diagram</h3>
-    <ul class="stack">
-      <li>A</li>
-      <li>B</li>
-    </ul>
-    <span>->XOR-></span>
-    <ul class="stack">
-      <li>Result</li>
-    </ul>
-  </div>
-  <p>The first operand popped off the stack is B, the second popped is A.</p>
-  <p>All variants push a N byte unsigned integer onto the stack that represents the equivalent C expression: A ^ B</p>
-  <p>XOR1 works on an unsigned 8 bit integer (N = 1 byte).</p>
-  <p>XOR2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
-  <p>XOR4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
-  <p>XOR8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
-  <p>XOR1 is assigned opcode 44 (0x2C).</p>
-  <p>XOR2 is assigned opcode 45 (0x2D).</p>
-  <p>XOR4 is assigned opcode 46 (0x2E).</p>
-  <p>XOR8 is assigned opcode 47 (0x2F).</p>
-</body>
+  <head>
+    <title>StackVM Instruction Documentation | XOR</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="helper.js"></script>
+  </head>
+  <body>
+    <h1>XOR ("Bitwise Xor" Instruction)</h1>
+    <p>
+      The XOR instructions, number 44 (0x2C) through 47 (0x2F), all pop 2, N
+      byte operands off the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>A</li>
+        <li>B</li>
+      </ul>
+      <span>->XOR-></span>
+      <ul class="stack">
+        <li>Result</li>
+      </ul>
+    </div>
+    <p>The first operand popped off the stack is B, the second popped is A.</p>
+    <p>
+      All variants push a N byte unsigned integer onto the stack that represents
+      the equivalent C expression: A ^ B
+    </p>
+    <p>XOR1 works on an unsigned 8 bit integer (N = 1 byte).</p>
+    <p>XOR2 works on an unsigned 16 bit integer (N = 2 bytes).</p>
+    <p>XOR4 works on an unsigned 32 bit integer (N = 4 bytes).</p>
+    <p>XOR8 works on an unsigned 64 bit integer (N = 8 bytes).</p>
+    <p>XOR1 is assigned opcode 44 (0x2C).</p>
+    <p>XOR2 is assigned opcode 45 (0x2D).</p>
+    <p>XOR4 is assigned opcode 46 (0x2E).</p>
+    <p>XOR8 is assigned opcode 47 (0x2F).</p>
+  </body>
 </html>
