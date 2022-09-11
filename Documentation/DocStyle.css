@@ -16,49 +16,55 @@ body {
   background-color: #0ff;
 }
 /* will be supported soon */
-.Isaac-Table tr.in_design td, .Isaac-Table td.in_design {
+.Isaac-Table tr.in_design td,
+.Isaac-Table td.in_design {
   background-color: #008000;
   color: white;
 }
 /* not supported but might be in the future */
-.Isaac-Table tr.nsm td, .Isaac-Table td.nsm {
+.Isaac-Table tr.nsm td,
+.Isaac-Table td.nsm {
   background-color: #00f;
   color: white;
 }
-.Isaac-Table tr.inf td, .Isaac-Table td.inf {
+.Isaac-Table tr.inf td,
+.Isaac-Table td.inf {
   background-color: #ff0;
 }
-.Isaac-Table tr.deprecated td, .Isaac-Table td.deprecated {
+.Isaac-Table tr.deprecated td,
+.Isaac-Table td.deprecated {
   background-color: #ffa500;
 }
-.Isaac-Table tr.ns td, .Isaac-Table td.ns{
+.Isaac-Table tr.ns td,
+.Isaac-Table td.ns {
   background-color: #f00;
 }
-.Isaac-Table tr.ns td, .Isaac-Table td.unused{
+.Isaac-Table tr.ns td,
+.Isaac-Table td.unused {
   background-color: #777;
 }
 /* TODO this */
 .Isaac-Table tr.nsm td a:link {
-  color: #BF0;
+  color: #bf0;
 }
 .Isaac-Table tr.nsm td a:link:hover {
-  color: #DF3;
+  color: #df3;
 }
 .Isaac-Table tr.nsm td a:visited:hover {
-  color: #FD3;
+  color: #fd3;
 }
 .Isaac-Table tr.nsm td a:visited {
-  color: #FB0;
+  color: #fb0;
 }
 .Isaac-Table tr.nsm td a:active {
-  color: #FF7;
+  color: #ff7;
 }
 .kw-var {
-  color:#00f;
+  color: #00f;
   font-weight: bold;
 }
 .kw-type {
-  color:#F0F;
+  color: #f0f;
   font-weight: bold;
 }
 .section {
@@ -71,16 +77,13 @@ ul.stack {
   display: inline-block;
   padding: 0px;
 }
-ul.stack>li{
+ul.stack > li {
   /* float: left;*/
   display: inline;
   padding: 10px;
   border: solid 1px black;
-  background-color: #0C0;
+  background-color: #0c0;
 }
-
-
-
 
 body.dark-mode {
   background-color: black;
@@ -90,74 +93,89 @@ body.dark-mode .Isaac-Table {
   border: 1px solid white;
 }
 body.dark-mode .Isaac-Table th {
-  border: 2px solid white;
-  background-color: #444;
+  border: 2px solid #444;
+  background-color: #111;
   color: white;
 }
 body.dark-mode .Isaac-Table td {
   border: 1px solid white;
-  background-color: #077;
+  background-color: #006464;
 }
 /* will be supported soon */
-body.dark-mode .Isaac-Table tr.in_design td, .Isaac-Table td.in_design {
+body.dark-mode .Isaac-Table tr.in_design td,
+body.dark-mode .Isaac-Table td.in_design {
   background-color: #060;
   color: white;
 }
 /* not supported but might be in the future */
-body.dark-mode .Isaac-Table tr.nsm td, .Isaac-Table td.nsm {
-  background-color: blue;
+body.dark-mode .Isaac-Table tr.nsm td,
+body.dark-mode .Isaac-Table td.nsm {
+  background-color: #0000e7;
   color: white;
 }
-.Isaac-Table tr.inf td, .Isaac-Table td.inf {
+body.dark-mode .Isaac-Table tr.inf td,
+body.dark-mode .Isaac-Table td.inf {
   background-color: #aa0;
 }
-.Isaac-Table tr.deprecated td, .Isaac-Table td.deprecated {
+body.dark-mode .Isaac-Table tr.deprecated td,
+body.dark-mode .Isaac-Table td.deprecated {
   background-color: #a60;
 }
-.Isaac-Table tr.ns td, .Isaac-Table td.ns{
+body.dark-mode .Isaac-Table tr.ns td,
+body.dark-mode .Isaac-Table td.ns {
   background-color: #a00;
 }
-.Isaac-Table tr.unused td, .Isaac-Table td.unused{
-  background-color: #777;
+body.dark-mode .Isaac-Table tr.unused td,
+body.dark-mode .Isaac-Table td.unused {
+  background-color: #333;
 }
 /* TODO this */
-.Isaac-Table tr.nsm td a:link {
-  color: #BF0;
+body.dark-mode .Isaac-Table tr.nsm td a:link {
+  color: #bf0;
 }
-.Isaac-Table tr.nsm td a:link:hover {
-  color: #DF3;
+body.dark-mode .Isaac-Table tr.nsm td a:link:hover {
+  color: #df3;
 }
-.Isaac-Table tr.nsm td a:visited:hover {
-  color: #FD3;
+body.dark-mode .Isaac-Table tr.nsm td a:visited:hover {
+  color: #fd3;
 }
-.Isaac-Table tr.nsm td a:visited {
-  color: #FB0;
+body.dark-mode .Isaac-Table tr.nsm td a:visited {
+  color: #fb0;
 }
-.Isaac-Table tr.nsm td a:active {
-  color: #FF7;
+body.dark-mode .Isaac-Table tr.nsm td a:active {
+  color: #ff7;
 }
-.kw-var {
-  color:blue;
+body.dark-mode .kw-var {
+  color: blue;
   font-weight: bold;
 }
-.kw-type {
-  color:#F0F;
+body.dark-mode .kw-type {
+  color: #f0f;
   font-weight: bold;
 }
-.section {
+body.dark-mode .section {
   border: solid 1px grey;
   margin: 10px;
   padding: 4px;
 }
-ul.stack {
+body.dark-mode ul.stack {
   list-style-type: none;
   display: inline-block;
   padding: 0px;
 }
-ul.stack>li{
+body.dark-mode ul.stack > li {
   /* float: left;*/
   display: inline;
   padding: 10px;
   border: solid 1px white;
   background-color: #070;
+}
+
+#legend {
+  padding: 8px;
+  border: solid 1px black;
+  display: inline-block;
+}
+body.dark-mode #legend {
+  border: solid 1px #2f2f2f;
 }

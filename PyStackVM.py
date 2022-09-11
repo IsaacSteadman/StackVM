@@ -222,26 +222,20 @@ BCCE_S_ARG_SZ4 = 2 << 3
 BCCE_S_ARG_SZ8 = 3 << 3
 
 # StackVm SysReg
-SVSRB_PTE = 0x00
 SVSRB_SP = 0x04
-SVSRB_SYS_FN = 0x08
+SVSRB_BP = 0x06
+SVSRB_PTE = 0x08
 
-SVSR_HYPER_PTE = 0x00
-SVSR_KERNEL_PTE = 0x01
-SVSR_USER_PTE = 0x02
-SVSR_WEB_PTE = 0x03
-SVSR_HYPER_SP = 0x04
-SVSR_KERNEL_SP = 0x05
-SVSR_USER_SP = 0x06
-SVSR_WEB_SP = 0x07
-SVSR_HYPER_SYS_FN = 0x08
-SVSR_KERNEL_SYS_FN = 0x09
-SVSR_USER_SYS_FN = 0x0A
-SVSR_WEB_SYS_FN = 0x0B
-SVSR_FLAGS = 0x0C
-# MISSING allocation for 0x0D
-SVSR_HYPER_ISR = 0x0E
-SVSR_KERNEL_ISR = 0x0F
+SVSR_FLAGS = 0x00
+SVSR_ISR = 0x01
+SVSR_SDP = 0x02
+SVSR_SYS_FN = 0x03
+SVSR_KERNEL_SP = 0x04
+SVSR_USER_SP = 0x05
+SVSR_KERNEL_BP = 0x06
+SVSR_USER_BP = 0x07
+SVSR_KERNEL_PTE = 0x08
+SVSR_USER_PTE = 0x09
 
 StackVM_SVSR_Codes = {
     "HYPER_PTE": 0x00, "KERNEL_PTE": 0x01, "USER_PTE": 0x02, "WEB_PTE": 0x03,
@@ -355,10 +349,10 @@ LstStackVM_BCR_Types = [
     "TOS", "SYSREG"
 ]
 LstStackVM_sysregs = [
-    "HYPER_PTE", "KERNEL_PTE", "USER_PTE", "WEB_PTE",
-    "HYPER_SP", "KERNEL_SP", "USER_SP", "WEB_SP",
-    "HYPER_SYS_FN", "KERNEL_SYS_FN", "USER_SYS_FN", "WEB_SYS_FN",
-    "FLAGS", "RESERVED", "HYPER_ISR", "KERNEL_ISR"
+    "FLAGS", "ISR", "SDP", "SYS_FN",
+    "KERNEL_SP", "USER_SP",
+    "KERNEL_BP", "USER_BP",
+    "KERNEL_PTE", "USER_PTE",
 ]
 LstStackVM_BCS_Types = [
     "SZ1_", "SZ2_", "SZ4_", "SZ8_",
@@ -1132,6 +1126,7 @@ class VirtualMachine(object):
         self.virt_mem_mode = VM_DISABLED
         self.virt_error_code = VME_NONE
         self.dbg_walk_page = False
+
         # 0: page_table_entry that points to the table where the entry was expected (or 0 if top level )
         # 1: pointer offset into page table to find the faulting entry (if top level this is the full tlpte)
         # 2: reason/level:
@@ -1140,8 +1135,7 @@ class VirtualMachine(object):
         #       0 for page not present, 1 for bad write perms, 2 for bad execute perms
         # 3: the address being resolved
         self.virt_error_data = (0,) * 4
-        self.virtual_syscalls_lvl = 1  # level at which syscalls are virtualized by the host
-        # (the processor can syscall from this level into the host)
+        self.virtualize_syscalls = True  # True if virtualizing syscalls from USER to KERNEL
         self.watch_data = []
 
     def check_perm_set_or_clr_error(self, pte_top: int, pte_index: int, pte_ptr: int, pte: int, virt_addr: int, mem_req_perms: int):
@@ -1358,7 +1352,7 @@ class VirtualMachine(object):
         if self.priv_lvl == 0:
             self.trap(INT_INVAL_SYSCALL, 1)
             return
-        if self.virtual_syscalls_lvl == self.priv_lvl:
+        if self.virtualize_syscalls:
             self.virt_syscall(n)
             return
         pl = self.priv_lvl - 1
@@ -1531,7 +1525,7 @@ class VirtualMachine(object):
             if evt.type == pygame.KEYDOWN:
                 self.set(4, c + 4, evt.key)
                 self.set(4, c + 8, evt.mod)
-                self.set(4, c + 12, ord(evt.unicode))
+                self.set(4, c + 12, ord(evt.unicode) if len(evt.unicode) else 0)
             elif evt.type == pygame.KEYUP:
                 self.set(4, c + 4, evt.key)
                 self.set(4, c + 8, evt.mod)

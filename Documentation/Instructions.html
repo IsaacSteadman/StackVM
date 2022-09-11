@@ -3,7 +3,8 @@
   <head>
     <title>StackVM Instruction Set</title>
     <link rel="stylesheet" type="text/css" href="DocStyle.css" />
-    <script type="text/javascript" src="helper.js"></script>
+    <script type="text/javascript" src="linkHelper.js"></script>
+    <script type="text/javascript" src="darkModeHelper.js"></script>
   </head>
 
   <body>
@@ -33,13 +34,10 @@
         right-most item is at the top.
       </p>
     </div>
-    <div style="float: right" id="errors">
+    <div style="float: right; display: none" id="errors">
       <h3>Errors</h3>
     </div>
-    <div
-      id="legend"
-      style="padding: 8px; border: solid 1px black; display: inline-block"
-    >
+    <div id="legend">
       <h3 style="width: 100%; text-align: center; margin: 0.5em">Legend</h3>
       <table class="Isaac-Table">
         <thead>
@@ -713,214 +711,5 @@
         </tr>
       </tbody>
     </table>
-    <script>
-      class TwoDimArray {
-        constructor(w, h) {
-          this.data = [];
-          this.w = w;
-          this.h = h;
-          let Len = w * h;
-          this.data.length = Len;
-          for (let c = 0; c < Len; ++c) {
-            this.data[c] = null;
-          }
-        }
-        appendColumn(column) {
-          if (column.length !== this.h) {
-            throw new Error("column length must equal height");
-          }
-          let newData = [];
-          newData.length = this.data.length + this.h;
-          let newW = this.w + 1;
-          for (let y = 0; y < this.h; ++y) {
-            let off0 = y * this.w;
-            let off1 = y * newW;
-            for (let x = 0; x < this.w; ++x) {
-              newData[off1 + x] = this.data[off0 + x];
-            }
-            newData[off1 + this.w] = column[y];
-          }
-          this.w = newW;
-          this.data = newData;
-        }
-        extendColumns(columns) {
-          for (let c = 0; c < columns.length; ++c) {
-            if (columns[c].length !== this.h) {
-              throw new Error("column length must equal height");
-            }
-          }
-          let newData = [];
-          newData.length = this.data.length + this.h * columns.length;
-          let newW = this.w + columns.length;
-          for (let y = 0; y < this.h; ++y) {
-            let off0 = y * this.w;
-            let off1 = y * newW;
-            for (let x = 0; x < this.w; ++x) {
-              newData[off1 + x] = this.data[off0 + x];
-            }
-            for (let x = this.w; x < newW; ++x) {
-              newData[off1 + x] = columns[x - this.w][y];
-            }
-          }
-          this.w = newW;
-          this.data = newData;
-        }
-        appendRow(row) {
-          if (row.length !== this.w) {
-            throw new Error("row length must equal width");
-          }
-          this.data = this.data.concat(row);
-          this.h += 1;
-        }
-        extendRows(rows) {
-          for (let c = 0; c < rows.length; ++c) {
-            if (rows[c].length !== this.h) {
-              throw new Error("row length must equal width");
-            }
-          }
-          this.data = rows.reduce((row, total) => total.concat(row), this.data);
-          this.h += rows.length;
-        }
-        index(x, y) {
-          if (x >= this.w) {
-            throw new Error("x must be less than width");
-          }
-          if (y >= this.h) {
-            throw new Error("y must be less than height");
-          }
-          return y * this.w + x;
-        }
-        get(x, y) {
-          return this.data[this.index(x, y)];
-        }
-        set(x, y, v) {
-          return (this.data[this.index(x, y)] = v);
-        }
-      }
-      let NullArray = function (sz) {
-        let rtn = [];
-        rtn.length = sz;
-        for (let c = 0; c < sz; ++c) {
-          rtn[c] = null;
-        }
-        return rtn;
-      };
-      class TableHelper {
-        constructor(tblDom) {
-          let tbodies = tblDom.getElementsByTagName("tbody");
-          if (tbodies.length !== 1) {
-            throw new Error("Expected exactly 1 <tbody>");
-          }
-          this.tbody = tbodies[0];
-          this.rows = this.tbody.getElementsByTagName("tr");
-          this.cells2D = new TwoDimArray(0, this.rows.length);
-          for (let c = 0; c < this.rows.length; ++c) {
-            let row = this.rows[c];
-            let posNull = 0;
-            while (
-              posNull < this.cells2D.w &&
-              this.cells2D.get(posNull, c) != null
-            ) {
-              ++posNull;
-            }
-            for (let c0 = 0; c0 < row.cells.length; ++c0) {
-              let cell = row.cells[c0];
-              while (posNull + cell.colSpan > this.cells2D.w) {
-                this.cells2D.appendColumn(NullArray(this.cells2D.h));
-              }
-              for (let x = 0; x < cell.colSpan; ++x) {
-                let offX = posNull++;
-                for (let y = 0; y < cell.rowSpan; ++y) {
-                  let offY = c + y;
-                  if (this.cells2D.get(offX, offY) != null) {
-                    throw new Error("Bad colspan x=" + offX + ",y=" + offY);
-                  }
-                  this.cells2D.set(offX, offY, cell);
-                }
-              }
-            }
-          }
-        }
-      }
-      let IsaacTable = document.getElementById("instructions");
-      let errorsDiv = document.getElementById("errors");
-      window.zz = new TableHelper(IsaacTable);
-      {
-        let InstrObject = {};
-        let cells2D = window.zz.cells2D;
-        for (let c = 0; c < cells2D.h; ) {
-          let td = cells2D.get(4, c);
-          let name = td.textContent;
-          if (InstrObject[name] == null) {
-            InstrObject[name] = c;
-          } else {
-            let str =
-              "Name " +
-              name +
-              " was encountered more than once at row " +
-              InstrObject[name] +
-              " and row " +
-              c;
-            let p = document.createElement("p");
-            p.innerText = str;
-            p.style.color = "red";
-            errorsDiv.appendChild(p);
-            errorsDiv.appendChild(document.createElement("br"));
-            console.warn(str);
-          }
-          let origHTML = td.innerHTML;
-          td.innerHTML =
-            '<a href="' +
-            encodeURIComponent(name) +
-            '.html">' +
-            origHTML +
-            "</a>";
-          c += td.rowSpan;
-        }
-      }
-      function OutputCPP_BC_Enum(Name) {
-        const cells2D = window.zz.cells2D;
-        let Rtn = "enum " + Name + " {\n";
-        for (let c = 0; c < cells2D.h; ++c) {
-          Rtn +=
-            "BC_" +
-            cells2D.get(6, c).innerText +
-            " = " +
-            Number(cells2D.get(7, c).innerText) +
-            ",\n";
-        }
-        Rtn += "};";
-        return Rtn;
-      }
-      function OutputPython_BC_Enum(Name) {
-        const cells2D = window.zz.cells2D;
-        let Tab = "";
-        let Rtn = "";
-        if (Name != null) {
-          Rtn += "class " + Name + ":\n";
-          Tab = "    ";
-        }
-        for (let c = 0; c < cells2D.h; ++c) {
-          Rtn +=
-            Tab +
-            "BC_" +
-            cells2D.get(6, c).innerText +
-            " = " +
-            Number(cells2D.get(7, c).innerText) +
-            "\n";
-        }
-        return Rtn;
-      }
-      function OutputJSON_BC_Enum() {
-        const cells2D = window.zz.cells2D;
-        let Rtn = {};
-        for (let c = 0; c < cells2D.h; ++c) {
-          Rtn[cells2D.get(6, c).innerText] = Number(
-            cells2D.get(7, c).innerText
-          );
-        }
-        return JSON.stringify(Rtn);
-      }
-    </script>
   </body>
 </html>

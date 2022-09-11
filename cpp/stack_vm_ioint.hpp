@@ -1,6 +1,8 @@
 // shared file that should be compileable by the StackVM C/C++ compiler
-namespace stackvm {
-  namespace ioint {
+namespace stackvm
+{
+  namespace ioint
+  {
     typedef unsigned long long ui64;
     typedef unsigned int ui32;
     typedef unsigned short ui16;
@@ -14,14 +16,17 @@ namespace stackvm {
     const ui32 TYPE_POWER_MANAGEMENT = 6;
     const ui32 TYPE_STORAGE_IO_BASIC = 7;
     const ui32 TYPE_GFX_HELPER = 8;
-    struct BaseDeviceInfo {
+    struct BaseDeviceInfo
+    {
       ui32 type_dev_id[2];
     };
-    struct UnknownDeviceInfo {
+    struct UnknownDeviceInfo
+    {
       BaseDeviceInfo bdi;
       ui64 reserved[7];
     };
-    struct BaseDeviceCommand {
+    struct BaseDeviceCommand
+    {
       ui32 dev_id_cmd[2];
 
       // set to 0 to not trigger an interrupt upon completion
@@ -30,22 +35,27 @@ namespace stackvm {
       ui64 idata_ext;
     };
     const ui64 INT_REASON_CMD_COMPLETE = 0;
-    struct BaseInterruptInfo {
+    struct BaseInterruptInfo
+    {
       ui32 dev_id_int_reason[2];
       ui64 reason;
       ui64 timestamp_ns;
     };
-    struct UnknownInterruptInfo {
+    struct UnknownInterruptInfo
+    {
       BaseDeviceInfo bii;
       ui64 reserved[8];
     };
-    struct CmdCompleteInterruptInfo {
+    struct CmdCompleteInterruptInfo
+    {
       BaseInterruptInfo bii;
       ui32 original_cmd_unused[2];
       ui64 idata_ext;
     };
-    namespace processor {
-      struct DeviceInfo {
+    namespace processor
+    {
+      struct DeviceInfo
+      {
         BaseDeviceInfo bdi;
         ui64 addr_hw_int_data;
         ui64 host_physical_package_id;
@@ -53,20 +63,25 @@ namespace stackvm {
         ui64 reserved[4];
       };
       const ui32 CMD_ISSUE_NEW_DEVICE_INTS = 1;
-      struct CmdIssueNewDeviceInts {
+      struct CmdIssueNewDeviceInts
+      {
         BaseDeviceCommand bdc;
       };
       const ui64 INT_REASON_NEW_DEV = 1;
-      struct IntDeviceAdded {
+      struct IntDeviceAdded
+      {
         BaseInterruptInfo bii;
         UnknownDeviceInfo device_added_info;
       };
-      struct StartupData {
+      struct StartupData
+      {
         UnknownInterruptInfo uii;
       };
     }
-    namespace video_out_basic {
-      struct DeviceInfo {
+    namespace video_out_basic
+    {
+      struct DeviceInfo
+      {
         BaseDeviceInfo bdi;
         ui32 dimensions[2];
         ui64 features;
@@ -75,26 +90,30 @@ namespace stackvm {
       const ui32 CMD_ISSUE_HW_UPDATE_INT = 1;
       const ui32 VIDEO_MODE_TEXT = 0;
       const ui32 VIDEO_MODE_PIXEL = 1;
-      struct CmdIssueHwUpdateInt {
+      struct CmdIssueHwUpdateInt
+      {
         BaseDeviceCommand bdc;
         ui32 video_mode;
       };
       const ui32 CMD_SET_MODE = 2;
-      struct CmdSetMode {
+      struct CmdSetMode
+      {
         BaseDeviceCommand bdc;
         ui32 mode;
       };
 
       // only valid in text mode (set with CMD_SET_MODE)
       const ui32 CMD_TXT_WRITE_CHAR = 3;
-      struct CmdTxtWriteChar {
+      struct CmdTxtWriteChar
+      {
         BaseDeviceCommand bdc;
         ui16 utf16f_utf16l_posx_posy[4];
       };
 
       // only valid in pixel mode (set with CMD_SET_MODE)
       const ui32 CMD_PIX_BLIT_FROM_MEMORY = 3;
-      struct CmdPixBlitFromMemory {
+      struct CmdPixBlitFromMemory
+      {
         BaseDeviceCommand bdc;
         ui64 source_addr;
         ui64 source_pitch;
@@ -102,25 +121,31 @@ namespace stackvm {
         ui32 target_xy[2];
       };
     }
-    namespace keyboard_basic {
-      struct DeviceInfo {
+    namespace keyboard_basic
+    {
+      struct DeviceInfo
+      {
         BaseDeviceInfo bdi;
         ui64 keyboard_layout;
         ui64 reserved[5];
       };
-      struct CmdInterruptOnKeyChange {
+      struct CmdInterruptOnKeyChange
+      {
         BaseDeviceCommand bdc;
         ui64 enable;
       };
-      struct IntKeyDown {
+      struct IntKeyDown
+      {
         BaseInterruptInfo bii;
         ui32 keycode_mods[2];
       };
     }
-    namespace storage_io_basic {
+    namespace storage_io_basic
+    {
       const ui32 CMD_READ_INTO = 2;
       const ui32 CMD_WRITE_FROM = 3;
-      struct DeviceInfo {
+      struct DeviceInfo
+      {
         BaseDeviceInfo bdi;
         ui64 uuid[2];
         ui64 num_sectors;
@@ -131,19 +156,22 @@ namespace stackvm {
         // bi means boot info (0x1 mask indicates bootability)
         // unused is the rest of the array of bytes
       };
-      struct CmdReadInto {
+      struct CmdReadInto
+      {
         BaseDeviceCommand bdc;
         ui64 sector_addr;
         ui64 num_sectors;
         ui64 buf_phys_addr;
       };
-      struct CmdWriteFrom {
+      struct CmdWriteFrom
+      {
         BaseDeviceCommand bdc;
         ui64 sector_addr;
         ui64 num_sectors;
         ui64 buf_phys_addr;
       };
-      struct CmdGetInfo {
+      struct CmdGetInfo
+      {
         BaseDeviceCommand bdc;
         // TODO
       };

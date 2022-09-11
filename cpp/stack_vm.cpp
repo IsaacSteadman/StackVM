@@ -5,14 +5,11 @@
 #include <type_traits>
 #include <iostream>
 #include <vector>
-#ifdef __linux__
-#define STACK_VM_EXPORT
-#else
+#ifdef defined(_WIN64) || (defined(_WIN32) && !defined(__CYGWIN__))
 #define STACK_VM_EXPORT __declspec(dllexport)
+#else
+#define STACK_VM_EXPORT
 #endif
-
-#define STACK_VM_VER_2 2
-// #define STACK_VM_VER_3
 
 using std::vector;
 
@@ -400,7 +397,8 @@ public:
     }
     else if (idx >= size_first)
     {
-      idx -= size_first * (T *)(next + idx) = data;
+      idx -= size_first;
+      *(T *)(next + idx) = data;
     }
     else
     {
@@ -429,7 +427,8 @@ public:
     }
     else if (idx >= size_first)
     {
-      idx -= size_first return *(T *)(next + idx);
+      idx -= size_first;
+      return *(T *)(next + idx);
     }
     else
     {
@@ -569,7 +568,7 @@ protected:
   bool vaddr_msb_eq_priv;
   uint8_t virt_mem_mode;
   uint64_t virt_error_data[4]; // virt_error_data[0] & 0xFF is the virt_error_code
-  uint64_t sys_regs[8];
+  uint64_t sys_regs[10];
   BaseStackVM_Env *env;
   uint64_t ax;
   typedef void (*VirtSyscall)(uint64_t syscall_n, StackVM_TrapException::SimpleStruct *err);
@@ -814,6 +813,8 @@ protected:
   }
   inline uint64_t walk_page(uint64_t virt_addr, uint64_t tlpte, uint8_t mrq_perms)
   {
+    // Later_TODO: use __m256i _mm256_cmpeq_epi64 (__m256i a, __m256i b) or some other
+    //   similar vector intrinsic to emulate TLB for fast vaddr translation
     if (virt_mem_mode == VM_DISABLED)
     {
       return virt_addr;
@@ -836,7 +837,7 @@ protected:
     }
     else
     {
-      throw std::exception("Unsupported virtual memory mode");
+      throw std::runtime_error("Unsupported virtual memory mode");
     }
   }
   inline uint64_t walk_page(uint64_t virt_addr, uint8_t mrq_perms)
@@ -897,6 +898,7 @@ protected:
           virt_error_data[2],
           virt_error_data[3]);
     }
+    return phys_addr;
   }
   MemoryView get_memory_view(uint64_t addr, size_t size, uint8_t mrq_perms)
   {
@@ -1343,16 +1345,16 @@ protected:
   {
     set(sp -= 8, val);
   }
-  // half push(half val)
-  float push(float val)
+  // void push(half val)
+  void push(float val)
   {
     set(sp -= 4, val);
   }
-  double push(double val)
+  void push(double val)
   {
     set(sp -= 8, val);
   }
-  // quadruple push(quadruple val)
+  // void push(quadruple val)
   void pop_into(uint8_t *buf, size_t size)
   {
     get_into(sp, buf, size);
@@ -1362,7 +1364,7 @@ protected:
   {
     set_from(sp -= size, buf, size);
   }
-  void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_bp, uint64_t prev_sp, uint64_t prev_flags, uint64_t arg0 = 0, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0)
+  void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_flags, uint64_t arg0 = 0, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0)
   {
     uint64_t isr_table_ptr = sys_regs[SVSR_ISR];
     if (isr_table_ptr == 0)
@@ -1389,23 +1391,23 @@ protected:
       {
         printf("INT_UNKNOWN (0x%02X)", int_n);
       }
-      printf("\n  prev_ip = 0x%016X\n  prev_bp = 0x%016X\n  prev_sp = 0x%016X\n  prev_flags = 0x%016X", prev_ip, prev_bp, prev_sp, prev_flags);
-      printf("\n  arg0 = 0x%016X\n  arg1 = 0x%016X\n  arg2 = 0x%016X\n  arg3 = 0x%016X\n", arg0, arg1, arg2, arg3);
+      printf("\n  prev_ip = 0x%016llX\n  prev_bp = 0x%016llX\n  prev_sp = 0x%016llX\n  prev_flags = 0x%016llX", prev_ip, prev_bp, prev_sp, prev_flags);
+      printf("\n  arg0 = 0x%016llX\n  arg1 = 0x%016llX\n  arg2 = 0x%016llX\n  arg3 = 0x%016llX\n", arg0, arg1, arg2, arg3);
       return;
     }
 
-    uint64_t flags_addr[2];
+    uint64_t flags_addr[2]; // { flags, addr }
     {
       priv_lvl = PRIV_KERNEL; // switch so that we are getting memory under kernel privileges
       calc_flags();
-      MemoryView page = get_memory_view(isr_table_ptr, 4096, MRQ_READ);
-      page.readatinto(int_n * 16, (uint8_t *)flags_addr, 16);
-      sys_regs[SVSR_FLAGS] = flags_addr[0] & ~SVSR_FLAGS_PRIV_MASK;
+      MemoryView mv = get_memory_view(isr_table_ptr + int_n * 16, 16, MRQ_READ);
+      mv.readatinto(0, (uint8_t *)flags_addr, 16);
+      sys_regs[SVSR_FLAGS] = flags_addr[0] & ~SVSR_FLAGS_PRIV_MASK; // Privilege bit is ignored and forced to 0 (KERNEL) for all interrupts
       calc_from_flags();
     }
 
     // TODO: finish implementation of switch to interrupt
-
+    // [prev_sp] [prev_flags] [prev_bp] [prev_ip] TOP of stack
   }
 
   inline void calc_from_flags()
@@ -1453,9 +1455,11 @@ protected:
       ;
     sys_regs[SVSRB_SP + priv_lvl] = sp;
   }
-  inline void set_flags_switch_to_priv(uint64_t new_flags) {
+  inline void set_flags_switch_to_priv(uint64_t new_flags)
+  {
     uint64_t old_flags = sys_regs[SVSR_FLAGS];
-    if (old_flags & SVSR_FLAGS_PRIV_MASK != new_flags & SVSR_FLAGS_PRIV_MASK) {
+    if ((old_flags & SVSR_FLAGS_PRIV_MASK) != (new_flags & SVSR_FLAGS_PRIV_MASK))
+    {
       int new_priv_lvl = (new_flags & SVSR_FLAGS_PRIV_MASK) >> SVSR_FLAGS_PRIV_SHFT;
       // TODO
     }
@@ -3231,8 +3235,16 @@ public:
         sp = prev_sp;
         sys_regs[SVSR_FLAGS] = prev_flags;
         calc_from_flags();
-        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
+        trap(exc.int_n, prev_ip, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
       }
     }
   }
 };
+
+extern "C"
+{
+  STACK_VM_EXPORT void *make_stack_vm(size_t memory_size)
+  {
+    ;
+  }
+}
