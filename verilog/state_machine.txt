@@ -1,0 +1,49 @@
+DECLARE global state AS struct {
+  // ip, bp, sp, sysregs
+}
+typedef struct {
+  uin16_t instr_id,
+  uint8_t res_id,
+  uint8_t sizeP1, // size = 0xFF means argument size is 256 bytes
+} AS ArgType
+DECLARE global stack AS ArgType[INSTRUCTION_WINDOW_SIZE * MAX_INSTRUCTION_RESULTS]
+DECLARE global cur_stack_size AS uint16_t
+DECLARE global prev_state AS TYPEOF state
+DECLARE local instr_buf AS BYTE[10]
+DECLARE local dependencies AS ArgType[MAX_DEPS_PER_INSTR]
+DECLARE local num_deps as uint8_t
+
+STATE fetch_first:
+- set prev_state = state
+- [read]: set instr_buf[0] = memory[state.ip++]
+- goto decode_first on done [read]
+
+STATE decode_first:
+- switch instr_buf[0]
+  - CASE BC_NOP
+    - goto fetch_first
+  - CASE BC_HLT
+    - on commit: set state.running = 0
+    - goto fetch_first
+  - CASE BC_EQ0
+  - CASE BC_NE0
+  - CASE BC_LT0
+  - CASE BC_LE0
+  - CASE BC_GT0
+  - CASE BC_GE0
+    - add_local_dep(pop_dep(assert_size=1))
+    - push_arg(size=1)
+  - CASE CONV
+    - goto fetch_conv
+  - CASE SWAP
+    - goto fetch_swap
+  - CASE LOAD
+    - goto fetch_load
+  - CASE STOR
+    - goto fetch_stor
+  - CASE CALL_E
+    - goto fetch_call_e
+  - CASE RET_E
+    - goto fetch_ret_e
+    
+  
