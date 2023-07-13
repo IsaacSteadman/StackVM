@@ -1546,6 +1546,20 @@ class VirtualMachine(object):
                 self.set(4, c + 4, evt.button)
                 self.set(4, c + 8, evt.pos[0])
                 self.set(4, c + 12, evt.pos[1])
+        elif n == 0x0C: # get event type number by string key
+            a = self.get(8, self.sp + 8)  # pygame
+            b = self.get(8, self.sp + 16) # pointer to string
+            attr = self.extract_zstr(b, "utf8")
+            pygame = self.objects[a]
+            res = 0xFFFFFFFFFFFFFFFF
+            try:
+                res = getattr(pygame, attr)
+            except:
+                pass
+            else:
+                if not isinstance(res, int):
+                    res = 0xFFFFFFFFFFFFFFFF
+            self.set(8, self.sp + 32, res)
         else:
             print("WARN: unrecognized syscall number %u" % n)
 

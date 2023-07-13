@@ -1408,7 +1408,8 @@ protected:
 
     // TODO: finish implementation of switch to interrupt
     // [prev_sp] [prev_flags] [prev_bp] [prev_ip] TOP of stack
-  }
+    // need to be able to perform a stack trace to trace interrupt and regular function call execution across kernel and user space boundaries
+    }
 
   inline void calc_from_flags()
   {
