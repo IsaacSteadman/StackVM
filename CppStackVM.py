@@ -1,5 +1,6 @@
 import ctypes
 import os
+import struct
 
 _lib_path = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "cpp", "stack_vm.dylib"
@@ -167,3 +168,41 @@ class VirtualMachine:
     def execute(self):
         """Run until the VM halts (BC_HLT or running == 0)."""
         _vm_execute(self.void_ptr_inst)
+
+    # ── PyStackVM compatibility shim ──────────────────────────────────────────
+    # These attributes and methods mirror the PyStackVM interface used by
+    # run_in_vm, add_cmd_argv_vm, and the Debugger so that both backends can
+    # be driven by the same code.
+
+    # VM_DISABLED == 0; tells Debugger that no virtual memory translation is active.
+    virt_mem_mode = 0
+    # No privilege levels in the C++ backend.
+    priv_lvl = 0
+
+    def load_program(self, program, at_addr: int = 0):
+        """Write bytecode into VM memory starting at at_addr."""
+        mem = self.memory
+        for i, b in enumerate(program):
+            mem[at_addr + i] = b
+
+    def set_bytes(self, addr: int, data) -> bool:
+        """Write a sequence of bytes into VM memory at addr."""
+        mem = self.memory
+        for i, b in enumerate(data):
+            mem[addr + i] = b
+        return True
+
+    _SET_FMTS = {1: "<B", 2: "<H", 4: "<I", 8: "<Q"}
+
+    def set(self, sz: int, addr: int, val: int) -> bool:
+        """Write an unsigned integer of sz bytes into VM memory at addr."""
+        bs = struct.pack(self._SET_FMTS[sz], val & ((1 << (sz * 8)) - 1))
+        mem = self.memory
+        for i, b in enumerate(bs):
+            mem[addr + i] = b
+        return True
+
+    def push(self, sz: int, val: int, typ: int = 0) -> bool:
+        """Decrement sp by sz bytes then write val; mirrors PyStackVM.push."""
+        self.sp = self.sp - sz
+        return self.set(sz, self.sp, val)
