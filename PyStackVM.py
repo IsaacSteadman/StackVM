@@ -1,6 +1,7 @@
 import struct
 import array
 from typing import Union, Optional
+
 float_t = struct.Struct("<f")
 double_t = struct.Struct("<d")
 
@@ -211,7 +212,7 @@ BCRE_RES_SZ4 = 0x2 << 3
 BCRE_RES_SZ8 = 0x3 << 3
 BCRE_RES_SZ_MASK = 0x3 << 3
 BCCE_SYSCALL = 1 << 7
-BCCE_N_REL = 1 << 6
+BCCE_IS_REL = 1 << 6
 BCCE_S_SYSN_SZ1 = 0 << 5
 BCCE_S_SYSN_SZ2 = 1 << 5
 BCCE_S_SYSN_SZ4 = 2 << 5
@@ -224,7 +225,7 @@ BCCE_S_ARG_SZ8 = 3 << 3
 # StackVm SysReg
 SVSRB_SP = 0x04
 SVSRB_BP = 0x06
-SVSRB_PTE = 0x08
+SVSRB_TLPTR = 0x08
 
 SVSR_FLAGS = 0x00
 SVSR_ISR = 0x01
@@ -234,14 +235,25 @@ SVSR_KERNEL_SP = 0x04
 SVSR_USER_SP = 0x05
 SVSR_KERNEL_BP = 0x06
 SVSR_USER_BP = 0x07
-SVSR_KERNEL_PTE = 0x08
-SVSR_USER_PTE = 0x09
+SVSR_KERNEL_TLPTR = 0x08
+SVSR_USER_TLPTR = 0x09
 
 StackVM_SVSR_Codes = {
-    "HYPER_PTE": 0x00, "KERNEL_PTE": 0x01, "USER_PTE": 0x02, "WEB_PTE": 0x03,
-    "HYPER_SP": 0x04, "KERNEL_SP": 0x05, "USER_SP": 0x06, "WEB_SP": 0x07,
-    "HYPER_SYS_FN": 0x08, "KERNEL_SYS_FN": 0x09, "USER_SYS_FN": 0x0A, "WEB_SYS_FN": 0x0B,
-    "FLAGS": 0x0C, "HYPER_ISR": 0x0E, "KERNEL_ISR": 0x0F
+    "HYPER_TLPTR": 0x00,
+    "KERNEL_TLPTR": 0x01,
+    "USER_TLPTR": 0x02,
+    "WEB_TLPTR": 0x03,
+    "HYPER_SP": 0x04,
+    "KERNEL_SP": 0x05,
+    "USER_SP": 0x06,
+    "WEB_SP": 0x07,
+    "HYPER_SYS_FN": 0x08,
+    "KERNEL_SYS_FN": 0x09,
+    "USER_SYS_FN": 0x0A,
+    "WEB_SYS_FN": 0x0B,
+    "FLAGS": 0x0C,
+    "HYPER_ISR": 0x0E,
+    "KERNEL_ISR": 0x0F,
 }
 
 INT_INVAL_OPCODE = 6
@@ -249,10 +261,22 @@ INT_PROTECT_FAULT = 13
 INT_PAGE_FAULT = 14
 INT_INVAL_SYSCALL = 15
 INT_LST = [
-    "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN",
-    "UNKNOWN", "UNKNOWN", "INVAL_OPCODE", "UNKNOWN",
-    "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN",
-    "UNKNOWN", "PROTECT_FAULT", "PAGE_FAULT", "INVAL_SYSCALL"
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "INVAL_OPCODE",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "UNKNOWN",
+    "PROTECT_FAULT",
+    "PAGE_FAULT",
+    "INVAL_SYSCALL",
 ] + ["UNKNOWN"] * 240
 
 MRQ_DONT_CHECK = 0
@@ -261,51 +285,276 @@ MRQ_WRITE = 2
 MRQ_EXEC = 3
 
 StackVM_BCRE_Codes = {
-    "RST_SP_SZ1": 0x00, "RST_SP_SZ2": 0x20, "RST_SP_SZ4": 0x40, "RST_SP_SZ8": 0x60,
-    "RES_SZ1": 0x0, "RES_SZ2": 0x8, "RES_SZ4": 0x10, "RES_SZ8": 0x18
+    "RST_SP_SZ1": 0x00,
+    "RST_SP_SZ2": 0x20,
+    "RST_SP_SZ4": 0x40,
+    "RST_SP_SZ8": 0x60,
+    "RES_SZ1": 0x0,
+    "RES_SZ2": 0x8,
+    "RES_SZ4": 0x10,
+    "RES_SZ8": 0x18,
 }
 
 LstStackVM_Codes = [
-    "NOP",      "HLT",      "EQ0",      "NE0",      "LT0",      "LE0",      "GT0",      "GE0",
-    "CONV",     "SWAP",     "LOAD",     "STOR",     "CALL_E",   "RET_E",    "SYSRET",   "INT",
-    "LSHIFT1",  "LSHIFT2",  "LSHIFT4",  "LSHIFT8",  "RSHIFT1",  "RSHIFT2",  "RSHIFT4",  "RSHIFT8",
-    "LROT1",    "LROT2",    "LROT4",    "LROT8",    "RROT1",    "RROT2",    "RROT4",    "RROT8",
-    "AND1",     "AND2",     "AND4",     "AND8",     "OR1",      "OR2",      "OR4",      "OR8",
-    "NOT1",     "NOT2",     "NOT4",     "NOT8",     "XOR1",     "XOR2",     "XOR4",     "XOR8",
-    "ADD1",     "ADD2",     "ADD4",     "ADD8",     "SUB1",     "SUB2",     "SUB4",     "SUB8",
-    "ADD_SP1",  "ADD_SP2",  "ADD_SP4",  "ADD_SP8",  "RST_SP1",  "RST_SP2",  "RST_SP4",  "RST_SP8",
-    "MUL1",     "MUL1S",    "MUL2",     "MUL2S",    "MUL4",     "MUL4S",    "MUL8",     "MUL8S",
-    "DIV1",     "DIV1S",    "DIV2",     "DIV2S",    "DIV4",     "DIV4S",    "DIV8",     "DIV8S",
-    "MOD1",     "MOD1S",    "MOD2",     "MOD2S",    "MOD4",     "MOD4S",    "MOD8",     "MOD8S",
-    "CMP1",     "CMP1S",    "CMP2",     "CMP2S",    "CMP4",     "CMP4S",    "CMP8",     "CMP8S",
-    "FADD_2",   "FADD_4",   "FADD_8",   "FADD_16",  "FSUB_2",   "FSUB_4",   "FSUB_8",   "FSUB_16",
-    "FMUL_2",   "FMUL_4",   "FMUL_8",   "FMUL_16",  "FDIV_2",   "FDIV_4",   "FDIV_8",   "FDIV_16",
-    "FMOD_2",   "FMOD_4",   "FMOD_8",   "FMOD_16",  "FCMP_2",   "FCMP_4",   "FCMP_8",   "FCMP_16",
-    "JMP",      "JMPIF",    "RJMP",     "RJMPIF",   "CALL",     "RCALL",    "RET",      "RET_N2",
+    "NOP",
+    "HLT",
+    "EQ0",
+    "NE0",
+    "LT0",
+    "LE0",
+    "GT0",
+    "GE0",
+    "CONV",
+    "SWAP",
+    "LOAD",
+    "STOR",
+    "CALL_E",
+    "RET_E",
+    "SYSRET",
+    "INT",
+    "LSHIFT1",
+    "LSHIFT2",
+    "LSHIFT4",
+    "LSHIFT8",
+    "RSHIFT1",
+    "RSHIFT2",
+    "RSHIFT4",
+    "RSHIFT8",
+    "LROT1",
+    "LROT2",
+    "LROT4",
+    "LROT8",
+    "RROT1",
+    "RROT2",
+    "RROT4",
+    "RROT8",
+    "AND1",
+    "AND2",
+    "AND4",
+    "AND8",
+    "OR1",
+    "OR2",
+    "OR4",
+    "OR8",
+    "NOT1",
+    "NOT2",
+    "NOT4",
+    "NOT8",
+    "XOR1",
+    "XOR2",
+    "XOR4",
+    "XOR8",
+    "ADD1",
+    "ADD2",
+    "ADD4",
+    "ADD8",
+    "SUB1",
+    "SUB2",
+    "SUB4",
+    "SUB8",
+    "ADD_SP1",
+    "ADD_SP2",
+    "ADD_SP4",
+    "ADD_SP8",
+    "RST_SP1",
+    "RST_SP2",
+    "RST_SP4",
+    "RST_SP8",
+    "MUL1",
+    "MUL1S",
+    "MUL2",
+    "MUL2S",
+    "MUL4",
+    "MUL4S",
+    "MUL8",
+    "MUL8S",
+    "DIV1",
+    "DIV1S",
+    "DIV2",
+    "DIV2S",
+    "DIV4",
+    "DIV4S",
+    "DIV8",
+    "DIV8S",
+    "MOD1",
+    "MOD1S",
+    "MOD2",
+    "MOD2S",
+    "MOD4",
+    "MOD4S",
+    "MOD8",
+    "MOD8S",
+    "CMP1",
+    "CMP1S",
+    "CMP2",
+    "CMP2S",
+    "CMP4",
+    "CMP4S",
+    "CMP8",
+    "CMP8S",
+    "FADD_2",
+    "FADD_4",
+    "FADD_8",
+    "FADD_16",
+    "FSUB_2",
+    "FSUB_4",
+    "FSUB_8",
+    "FSUB_16",
+    "FMUL_2",
+    "FMUL_4",
+    "FMUL_8",
+    "FMUL_16",
+    "FDIV_2",
+    "FDIV_4",
+    "FDIV_8",
+    "FDIV_16",
+    "FMOD_2",
+    "FMOD_4",
+    "FMOD_8",
+    "FMOD_16",
+    "FCMP_2",
+    "FCMP_4",
+    "FCMP_8",
+    "FCMP_16",
+    "JMP",
+    "JMPIF",
+    "RJMP",
+    "RJMPIF",
+    "CALL",
+    "RCALL",
+    "RET",
+    "RET_N2",
 ]
 
 StackVM_Codes = {
-    "NOP": 0, "HLT": 1, "EQ0": 2, "NE0": 3, "LT0": 4, "LE0": 5, "GT0": 6, "GE0": 7,
-    "CONV": 8, "SWAP": 9, "LOAD": 10, "STOR": 11, "CALL_E": 12, "RET_E": 13, "SYSRET": 14, "INT": 15,
-    "LSHIFT1": 16, "LSHIFT2": 17, "LSHIFT4": 18, "LSHIFT8": 19, "RSHIFT1": 20, "RSHIFT2": 21, "RSHIFT4": 22,
+    "NOP": 0,
+    "HLT": 1,
+    "EQ0": 2,
+    "NE0": 3,
+    "LT0": 4,
+    "LE0": 5,
+    "GT0": 6,
+    "GE0": 7,
+    "CONV": 8,
+    "SWAP": 9,
+    "LOAD": 10,
+    "STOR": 11,
+    "CALL_E": 12,
+    "RET_E": 13,
+    "SYSRET": 14,
+    "INT": 15,
+    "LSHIFT1": 16,
+    "LSHIFT2": 17,
+    "LSHIFT4": 18,
+    "LSHIFT8": 19,
+    "RSHIFT1": 20,
+    "RSHIFT2": 21,
+    "RSHIFT4": 22,
     "RSHIFT8": 23,
-    "LROT1": 24, "LROT2": 25, "LROT4": 26, "LROT8": 27, "RROT1": 28, "RROT2": 29, "RROT4": 30, "RROT8": 31,
-    "AND1": 32, "AND2": 33, "AND4": 34, "AND8": 35, "OR1": 36, "OR2": 37, "OR4": 38, "OR8": 39,
-    "NOT1": 40, "NOT2": 41, "NOT4": 42, "NOT8": 43, "XOR1": 44, "XOR2": 45, "XOR4": 46, "XOR8": 47,
-    "ADD1": 48, "ADD2": 49, "ADD4": 50, "ADD8": 51, "SUB1": 52, "SUB2": 53, "SUB4": 54, "SUB8": 55,
-    "ADD_SP1": 56, "ADD_SP2": 57, "ADD_SP4": 58, "ADD_SP8": 59, "RST_SP1": 60, "RST_SP2": 61, "RST_SP4": 62,
+    "LROT1": 24,
+    "LROT2": 25,
+    "LROT4": 26,
+    "LROT8": 27,
+    "RROT1": 28,
+    "RROT2": 29,
+    "RROT4": 30,
+    "RROT8": 31,
+    "AND1": 32,
+    "AND2": 33,
+    "AND4": 34,
+    "AND8": 35,
+    "OR1": 36,
+    "OR2": 37,
+    "OR4": 38,
+    "OR8": 39,
+    "NOT1": 40,
+    "NOT2": 41,
+    "NOT4": 42,
+    "NOT8": 43,
+    "XOR1": 44,
+    "XOR2": 45,
+    "XOR4": 46,
+    "XOR8": 47,
+    "ADD1": 48,
+    "ADD2": 49,
+    "ADD4": 50,
+    "ADD8": 51,
+    "SUB1": 52,
+    "SUB2": 53,
+    "SUB4": 54,
+    "SUB8": 55,
+    "ADD_SP1": 56,
+    "ADD_SP2": 57,
+    "ADD_SP4": 58,
+    "ADD_SP8": 59,
+    "RST_SP1": 60,
+    "RST_SP2": 61,
+    "RST_SP4": 62,
     "RST_SP8": 63,
-    "MUL1": 64, "MUL1S": 65, "MUL2": 66, "MUL2S": 67, "MUL4": 68, "MUL4S": 69, "MUL8": 70, "MUL8S": 71,
-    "DIV1": 72, "DIV1S": 73, "DIV2": 74, "DIV2S": 75, "DIV4": 76, "DIV4S": 77, "DIV8": 78, "DIV8S": 79,
-    "MOD1": 80, "MOD1S": 81, "MOD2": 82, "MOD2S": 83, "MOD4": 84, "MOD4S": 85, "MOD8": 86, "MOD8S": 87,
-    "CMP1": 88, "CMP1S": 89, "CMP2": 90, "CMP2S": 91, "CMP4": 92, "CMP4S": 93, "CMP8": 94, "CMP8S": 95,
-    "FADD_2": 96, "FADD_4": 97, "FADD_8": 98, "FADD_16": 99, "FSUB_2": 100, "FSUB_4": 101, "FSUB_8": 102,
+    "MUL1": 64,
+    "MUL1S": 65,
+    "MUL2": 66,
+    "MUL2S": 67,
+    "MUL4": 68,
+    "MUL4S": 69,
+    "MUL8": 70,
+    "MUL8S": 71,
+    "DIV1": 72,
+    "DIV1S": 73,
+    "DIV2": 74,
+    "DIV2S": 75,
+    "DIV4": 76,
+    "DIV4S": 77,
+    "DIV8": 78,
+    "DIV8S": 79,
+    "MOD1": 80,
+    "MOD1S": 81,
+    "MOD2": 82,
+    "MOD2S": 83,
+    "MOD4": 84,
+    "MOD4S": 85,
+    "MOD8": 86,
+    "MOD8S": 87,
+    "CMP1": 88,
+    "CMP1S": 89,
+    "CMP2": 90,
+    "CMP2S": 91,
+    "CMP4": 92,
+    "CMP4S": 93,
+    "CMP8": 94,
+    "CMP8S": 95,
+    "FADD_2": 96,
+    "FADD_4": 97,
+    "FADD_8": 98,
+    "FADD_16": 99,
+    "FSUB_2": 100,
+    "FSUB_4": 101,
+    "FSUB_8": 102,
     "FSUB_16": 103,
-    "FMUL_2": 104, "FMUL_4": 105, "FMUL_8": 106, "FMUL_16": 107, "FDIV_2": 108, "FDIV_4": 109, "FDIV_8": 110,
+    "FMUL_2": 104,
+    "FMUL_4": 105,
+    "FMUL_8": 106,
+    "FMUL_16": 107,
+    "FDIV_2": 108,
+    "FDIV_4": 109,
+    "FDIV_8": 110,
     "FDIV_16": 111,
-    "FMOD_2": 112, "FMOD_4": 113, "FMOD_8": 114, "FMOD_16": 115, "FCMP_2": 116, "FCMP_4": 117, "FCMP_8": 118,
+    "FMOD_2": 112,
+    "FMOD_4": 113,
+    "FMOD_8": 114,
+    "FMOD_16": 115,
+    "FCMP_2": 116,
+    "FCMP_4": 117,
+    "FCMP_8": 118,
     "FCMP_16": 119,
-    "JMP": 120, "JMPIF": 121, "RJMP": 122, "RJMPIF": 123, "CALL": 124, "RCALL": 125, "RET": 126, "RET_N2": 127
+    "JMP": 120,
+    "JMPIF": 121,
+    "RJMP": 122,
+    "RJMPIF": 123,
+    "CALL": 124,
+    "RCALL": 125,
+    "RET": 126,
+    "RET_N2": 127,
 }
 
 
@@ -317,51 +566,132 @@ def _test():
 _test()
 
 StackVM_BCR_Codes = {
-    "ABS_A4": 0x00, "ABS_A8": 0x01, "ABS_S4": 0x02, "ABS_S8": 0x03,
-    "R_BP1": 0x04, "R_BP2": 0x05, "R_BP4": 0x06, "R_BP8": 0x07,
-    "ABS_C": 0x08, "REG_BP": 0x09, "RES": 0x0A, "EA_R_IP": 0x0B, "TOS": 0x0C,
+    "ABS_A4": 0x00,
+    "ABS_A8": 0x01,
+    "ABS_S4": 0x02,
+    "ABS_S8": 0x03,
+    "R_BP1": 0x04,
+    "R_BP2": 0x05,
+    "R_BP4": 0x06,
+    "R_BP8": 0x07,
+    "ABS_C": 0x08,
+    "REG_BP": 0x09,
+    "RES": 0x0A,
+    "EA_R_IP": 0x0B,
+    "TOS": 0x0C,
     "SYSREG": 0x0D,
-    "SZ_1": 0x0 << 5, "SZ_2": 0x1 << 5, "SZ_4": 0x2 << 5, "SZ_8": 0x3 << 5
+    "SZ_1": 0x0 << 5,
+    "SZ_2": 0x1 << 5,
+    "SZ_4": 0x2 << 5,
+    "SZ_8": 0x3 << 5,
 }
 StackVM_BCS_Codes = {
-    "SZ1_A": 0x00, "SZ2_A": 0x01, "SZ4_A": 0x02, "SZ8_A": 0x03,
-    "SZ16_A": 0x04, "SZ32_A": 0x05, "SZ64_A": 0x06, "SZ128_A": 0x07,
-    "SZ1_B": 0x00, "SZ2_B": 0x08, "SZ4_B": 0x10, "SZ8_B": 0x18,
-    "SZ16_B": 0x20, "SZ32_B": 0x28, "SZ64_B": 0x30, "SZ128_B": 0x38
+    "SZ1_A": 0x00,
+    "SZ2_A": 0x01,
+    "SZ4_A": 0x02,
+    "SZ8_A": 0x03,
+    "SZ16_A": 0x04,
+    "SZ32_A": 0x05,
+    "SZ64_A": 0x06,
+    "SZ128_A": 0x07,
+    "SZ1_B": 0x00,
+    "SZ2_B": 0x08,
+    "SZ4_B": 0x10,
+    "SZ8_B": 0x18,
+    "SZ16_B": 0x20,
+    "SZ32_B": 0x28,
+    "SZ64_B": 0x30,
+    "SZ128_B": 0x38,
 }
 StackVM_BCC_Codes = {
-    "UI_1_I": 0x00, "SI_1_I": 0x01, "UI_2_I": 0x02, "SI_2_I": 0x03,
-    "UI_4_I": 0x04, "SI_4_I": 0x05, "UI_8_I": 0x06, "SI_8_I": 0x07,
-    "F_2_I": 0x08, "F_4_I": 0x09, "F_8_I": 0x0A, "F_16_I": 0x0B,
-    "UI_1_O": 0x00, "SI_1_O": 0x10, "UI_2_O": 0x20, "SI_2_O": 0x30,
-    "UI_4_O": 0x40, "SI_4_O": 0x50, "UI_8_O": 0x60, "SI_8_O": 0x70,
-    "F_2_O": 0x80, "F_4_O": 0x90, "F_8_O": 0xA0, "F_16_O": 0xB0
+    "UI_1_I": 0x00,
+    "SI_1_I": 0x01,
+    "UI_2_I": 0x02,
+    "SI_2_I": 0x03,
+    "UI_4_I": 0x04,
+    "SI_4_I": 0x05,
+    "UI_8_I": 0x06,
+    "SI_8_I": 0x07,
+    "F_2_I": 0x08,
+    "F_4_I": 0x09,
+    "F_8_I": 0x0A,
+    "F_16_I": 0x0B,
+    "UI_1_O": 0x00,
+    "SI_1_O": 0x10,
+    "UI_2_O": 0x20,
+    "SI_2_O": 0x30,
+    "UI_4_O": 0x40,
+    "SI_4_O": 0x50,
+    "UI_8_O": 0x60,
+    "SI_8_O": 0x70,
+    "F_2_O": 0x80,
+    "F_4_O": 0x90,
+    "F_8_O": 0xA0,
+    "F_16_O": 0xB0,
 }
 StackVM_BCCE_Codes = {
-    "SYSCALL": 0x80, "N_REL": 0x40,
-    "S_SYSN_SZ1": 0x00, "S_SYSN_SZ2": 0x20, "S_SYSN_SZ4": 0x40, "S_SYSN_SZ8": 0x60,
-    "S_ARG_SZ1": 0x00, "S_ARG_SZ2": 0x08, "S_ARG_SZ4": 0x10, "S_ARG_SZ8": 0x18
+    "SYSCALL": 0x80,
+    "IS_REL": 0x40,
+    "S_SYSN_SZ1": 0x00,
+    "S_SYSN_SZ2": 0x20,
+    "S_SYSN_SZ4": 0x40,
+    "S_SYSN_SZ8": 0x60,
+    "S_ARG_SZ1": 0x00,
+    "S_ARG_SZ2": 0x08,
+    "S_ARG_SZ4": 0x10,
+    "S_ARG_SZ8": 0x18,
 }
 LstStackVM_BCR_Types = [
-    "ABS_A4", "ABS_A8", "ABS_S4", "ABS_S8",
-    "R_BP1", "R_BP2", "R_BP4", "R_BP8",
-    "ABS_C", "REG_BP", "RES", "EA_R_IP",
-    "TOS", "SYSREG"
+    "ABS_A4",
+    "ABS_A8",
+    "ABS_S4",
+    "ABS_S8",
+    "R_BP1",
+    "R_BP2",
+    "R_BP4",
+    "R_BP8",
+    "ABS_C",
+    "REG_BP",
+    "RES",
+    "EA_R_IP",
+    "TOS",
+    "SYSREG",
 ]
 LstStackVM_sysregs = [
-    "FLAGS", "ISR", "SDP", "SYS_FN",
-    "KERNEL_SP", "USER_SP",
-    "KERNEL_BP", "USER_BP",
-    "KERNEL_PTE", "USER_PTE",
+    "FLAGS",
+    "ISR",
+    "SDP",
+    "SYS_FN",
+    "KERNEL_SP",
+    "USER_SP",
+    "KERNEL_BP",
+    "USER_BP",
+    "KERNEL_TLPTR",
+    "USER_TLPTR",
 ]
 LstStackVM_BCS_Types = [
-    "SZ1_", "SZ2_", "SZ4_", "SZ8_",
-    "SZ16_", "SZ32_", "SZ64_", "SZ128_"
+    "SZ1_",
+    "SZ2_",
+    "SZ4_",
+    "SZ8_",
+    "SZ16_",
+    "SZ32_",
+    "SZ64_",
+    "SZ128_",
 ]
 LstStackVM_BCC_Types = [
-    "UI_1_", "SI_1_", "UI_2_", "SI_2_",
-    "UI_4_", "SI_4_", "UI_8_", "SI_8_",
-    "F_2_", "F_4_", "F_8_", "F_16_",
+    "UI_1_",
+    "SI_1_",
+    "UI_2_",
+    "SI_2_",
+    "UI_4_",
+    "SI_4_",
+    "UI_8_",
+    "SI_8_",
+    "F_2_",
+    "F_4_",
+    "F_8_",
+    "F_16_",
 ]
 
 
@@ -423,7 +753,9 @@ def vm_load(vm_inst):
         if not vm_inst.push(sz, data):
             vm_inst.ip -= 2
             vm_inst.sp -= 8
-    elif typ & BCR_R_BP_MASK == BCR_R_BP_VAL:  # BCR_R_BP1, BCR_R_BP2, BCR_R_BP4, BCR_R_BP8
+    elif (
+        typ & BCR_R_BP_MASK == BCR_R_BP_VAL
+    ):  # BCR_R_BP1, BCR_R_BP2, BCR_R_BP4, BCR_R_BP8
         n_bytes = 1 << (typ & 0x03)
         addr = vm_inst.get_instr_dat(n_bytes, 1)
         if addr is None:
@@ -469,7 +801,9 @@ def vm_load(vm_inst):
             vm_inst.ip -= 3
     else:
         raise ValueError(
-            "Unsupported BCR code for BC_LOAD instruction: %u at 0x%X" % (typ, vm_inst.ip))
+            "Unsupported BCR code for BC_LOAD instruction: %u at 0x%X"
+            % (typ, vm_inst.ip)
+        )
 
 
 def vm_store(vm_inst):
@@ -532,7 +866,9 @@ def vm_store(vm_inst):
         if not vm_inst.set(sz, addr, data):
             vm_inst.ip -= 2
             vm_inst.sp -= 8 + sz
-    elif typ & BCR_R_BP_MASK == BCR_R_BP_VAL:  # BCR_R_BP1, BCR_R_BP2, BCR_R_BP4, BCR_R_BP8
+    elif (
+        typ & BCR_R_BP_MASK == BCR_R_BP_VAL
+    ):  # BCR_R_BP1, BCR_R_BP2, BCR_R_BP4, BCR_R_BP8
         n_bytes = 1 << (typ & 0x03)
         addr = vm_inst.get_instr_dat(n_bytes, 1)
         if addr is None:
@@ -548,14 +884,20 @@ def vm_store(vm_inst):
             vm_inst.priv_lvl = (reg_v >> 8) & 3
             vm_inst.priority = reg_v & 0xFF
     elif typ == BCR_ABS_C:
-        raise ValueError("BCR_ABS_C is unsupported on store instruction at 0x%X" % vm_inst.ip)
+        raise ValueError(
+            "BCR_ABS_C is unsupported on store instruction at 0x%X" % vm_inst.ip
+        )
     elif typ == BCR_REG_BP:
         vm_inst.bp = vm_inst.pop(8)
     elif typ == BCR_EA_R_IP:
-        raise ValueError("BCR_EA_R_IP is unsupported on store instruction at 0x%X" % vm_inst.ip)
+        raise ValueError(
+            "BCR_EA_R_IP is unsupported on store instruction at 0x%X" % vm_inst.ip
+        )
     else:
         raise ValueError(
-            "Unsupported BCR code for BC_STOR instruction: %u at 0x%X" % (typ, vm_inst.ip))
+            "Unsupported BCR code for BC_STOR instruction: %u at 0x%X"
+            % (typ, vm_inst.ip)
+        )
 
 
 def vm_exit(vm_inst):
@@ -622,7 +964,7 @@ def vm_call_ext(vm_inst):
         sys_num_sz = (1, 2, 4, 8)[sys_num_sz_cls]
         sys_num = vm_inst.pop(sys_num_sz)
         vm_inst.syscall(sys_num)
-        '''sys_num = vm_inst.pop()
+        """sys_num = vm_inst.pop()
         if vm_inst.cr4 & 0x3 == vm_inst.virtual_syscalls_lvl:
             vm_inst.virt_syscall(sys_num)
         else:
@@ -630,7 +972,7 @@ def vm_call_ext(vm_inst):
             old_regs = [vm_inst.cr4, vm_inst.ip, vm_inst.sp, vm_inst.bp]  # TODO
             vm_inst.call(num)
         raise NotImplementedError("SysCall (CALL_E with IS_SYS=1) is unsupported")
-        '''
+        """
     else:
         addr = vm_inst.pop(8)
         if a & 0x40:
@@ -667,6 +1009,7 @@ def vm_sys_ret(vm_inst):
 class InterruptApi(object):
     def __init__(self):
         import sys
+
         self.sys = sys
         self.stdout = sys.stdout
         self.stdin = sys.stdin
@@ -686,7 +1029,7 @@ class InterruptApi(object):
             if exponent & 0x80000000:
                 exponent -= 0x100000000
             base = vm_inst.get_float(8, vm_inst.sp + 5)
-            vm_inst.set_float(8, vm_inst.sp + 13, base ** exponent)
+            vm_inst.set_float(8, vm_inst.sp + 13, base**exponent)
             return
         if n != 0x21:  # MSDOS "INT 21h"
             raise NotImplementedError("Not Implemented")
@@ -717,7 +1060,7 @@ class InterruptApi(object):
             size = vm_inst.get(8, vm_inst.sp + 9)
             length = self.gets_len()
             real_len = min(size, length, len(vm_inst.memory) - addr)
-            vm_inst.memory[addr: addr + real_len] = self.read_buf[:real_len]
+            vm_inst.memory[addr : addr + real_len] = self.read_buf[:real_len]
             self.read_buf = self.read_buf[real_len:]
             vm_inst.set(8, vm_inst.sp + 17, real_len)
         elif cmd == 0x0B:  # get status [UInt64 getStatus()]
@@ -727,7 +1070,7 @@ class InterruptApi(object):
         self.stdout.write(str(ch))
 
     def puts(self, s):
-        self.stdout.write(s.decode('utf-8'))
+        self.stdout.write(s.decode("utf-8"))
 
     def getchar(self):
         if len(self.read_buf) == 0:
@@ -763,7 +1106,9 @@ class AdvProgIntCtl(object):
         self.arg2 = 0
         self.arg3 = 0
 
-    def trigger(self, which_int: int, arg0: int=0, arg1: int=0, arg2: int=0, arg3: int=0):
+    def trigger(
+        self, which_int: int, arg0: int = 0, arg1: int = 0, arg2: int = 0, arg3: int = 0
+    ):
         self.int_ready = True
         self.which_int = which_int
         self.arg0 = arg0
@@ -944,14 +1289,14 @@ class SplitMemView(object):
     def pack_float(self, f: float):
         data = (float_t if self.sz == 4 else double_t).pack(f)
         mva = self.mva
-        mva[:] = data[:len(mva)]
-        self.mvb = data[len(mva):]
+        mva[:] = data[: len(mva)]
+        self.mvb = data[len(mva) :]
 
     def pack_int(self, i: int, signed=False):
         data = i.to_bytes(self.sz, "little", signed=signed)
         mva = self.mva
-        mva[:] = data[:len(mva)]
-        self.mvb = data[len(mva):]
+        mva[:] = data[: len(mva)]
+        self.mvb = data[len(mva) :]
 
     def unpack_int(self, signed=False) -> int:
         data = bytearray(self.mva)
@@ -960,8 +1305,8 @@ class SplitMemView(object):
 
     def pack_bytes(self, data: Union[bytes, bytearray, memoryview]):
         mva = self.mva
-        mva[:] = data[:len(mva)]
-        self.mvb = data[len(mva):]
+        mva[:] = data[: len(mva)]
+        self.mvb = data[len(mva) :]
 
 
 class VirtualMachine(object):
@@ -1070,23 +1415,33 @@ class VirtualMachine(object):
         lambda vm_inst: vm_inst.push(2, add1(vm_inst.pop(2, 2), vm_inst.pop(2, 2)), 2),
         lambda vm_inst: vm_inst.push(4, add1(vm_inst.pop(4, 2), vm_inst.pop(4, 2)), 2),
         lambda vm_inst: vm_inst.push(8, add1(vm_inst.pop(8, 2), vm_inst.pop(8, 2)), 2),
-        lambda vm_inst: vm_inst.push(16, add1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2),
+        lambda vm_inst: vm_inst.push(
+            16, add1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2
+        ),
         lambda vm_inst: vm_inst.push(2, sub1(vm_inst.pop(2, 2), vm_inst.pop(2, 2)), 2),
         lambda vm_inst: vm_inst.push(4, sub1(vm_inst.pop(4, 2), vm_inst.pop(4, 2)), 2),
         lambda vm_inst: vm_inst.push(8, sub1(vm_inst.pop(8, 2), vm_inst.pop(8, 2)), 2),
-        lambda vm_inst: vm_inst.push(16, sub1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2),
+        lambda vm_inst: vm_inst.push(
+            16, sub1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2
+        ),
         lambda vm_inst: vm_inst.push(2, mul1(vm_inst.pop(2, 2), vm_inst.pop(2, 2)), 2),
         lambda vm_inst: vm_inst.push(4, mul1(vm_inst.pop(4, 2), vm_inst.pop(4, 2)), 2),
         lambda vm_inst: vm_inst.push(8, mul1(vm_inst.pop(8, 2), vm_inst.pop(8, 2)), 2),
-        lambda vm_inst: vm_inst.push(16, mul1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2),
+        lambda vm_inst: vm_inst.push(
+            16, mul1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2
+        ),
         lambda vm_inst: vm_inst.push(2, fdiv(vm_inst.pop(2, 2), vm_inst.pop(2, 2)), 2),
         lambda vm_inst: vm_inst.push(4, fdiv(vm_inst.pop(4, 2), vm_inst.pop(4, 2)), 2),
         lambda vm_inst: vm_inst.push(8, fdiv(vm_inst.pop(8, 2), vm_inst.pop(8, 2)), 2),
-        lambda vm_inst: vm_inst.push(16, fdiv(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2),
+        lambda vm_inst: vm_inst.push(
+            16, fdiv(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2
+        ),
         lambda vm_inst: vm_inst.push(2, mod1(vm_inst.pop(2, 2), vm_inst.pop(2, 2)), 2),
         lambda vm_inst: vm_inst.push(4, mod1(vm_inst.pop(4, 2), vm_inst.pop(4, 2)), 2),
         lambda vm_inst: vm_inst.push(8, mod1(vm_inst.pop(8, 2), vm_inst.pop(8, 2)), 2),
-        lambda vm_inst: vm_inst.push(16, mod1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2),
+        lambda vm_inst: vm_inst.push(
+            16, mod1(vm_inst.pop(16, 2), vm_inst.pop(16, 2)), 2
+        ),
         lambda vm_inst: vm_inst.push(1, cmp1(vm_inst.pop(2), vm_inst.pop(2)), 1),
         lambda vm_inst: vm_inst.push(1, cmp1(vm_inst.pop(4), vm_inst.pop(4)), 1),
         lambda vm_inst: vm_inst.push(1, cmp1(vm_inst.pop(8), vm_inst.pop(8)), 1),
@@ -1095,7 +1450,9 @@ class VirtualMachine(object):
         lambda vm_inst: vm_inst.set_ip(vm_inst.pop(8)),
         lambda vm_inst: vm_inst.set_ip_if(vm_inst.pop(8), vm_inst.pop(1)),
         lambda vm_inst: vm_inst.set_ip(vm_inst.pop(8, 1) + vm_inst.ip),
-        lambda vm_inst: vm_inst.set_ip_if(vm_inst.pop(8, 1) + vm_inst.ip, vm_inst.pop(1)),
+        lambda vm_inst: vm_inst.set_ip_if(
+            vm_inst.pop(8, 1) + vm_inst.ip, vm_inst.pop(1)
+        ),
         lambda vm_inst: vm_inst.call(vm_inst.pop(8)),
         lambda vm_inst: vm_inst.call(vm_inst.pop(8, 1) + vm_inst.ip),
         lambda vm_inst: vm_inst.ret(),
@@ -1108,7 +1465,7 @@ class VirtualMachine(object):
 
     def __init__(self, heap_sz=16384, stack_sz=4096):
         self.api = InterruptApi()
-        self.sys_regs = array.array('Q', [0] * 16)
+        self.sys_regs = array.array("Q", [0] * 16)
         self.priority = 255
         self.priv_lvl = 1
         self.sys_regs[SVSR_FLAGS] = self.priority | (self.priv_lvl << 8)
@@ -1135,10 +1492,20 @@ class VirtualMachine(object):
         #       0 for page not present, 1 for bad write perms, 2 for bad execute perms
         # 3: the address being resolved
         self.virt_error_data = (0,) * 4
-        self.virtualize_syscalls = True  # True if virtualizing syscalls from USER to KERNEL
+        self.virtualize_syscalls = (
+            True  # True if virtualizing syscalls from USER to KERNEL
+        )
         self.watch_data = []
 
-    def check_perm_set_or_clr_error(self, pte_top: int, pte_index: int, pte_ptr: int, pte: int, virt_addr: int, mem_req_perms: int):
+    def check_perm_set_or_clr_error(
+        self,
+        pte_top: int,
+        pte_index: int,
+        pte_ptr: int,
+        pte: int,
+        virt_addr: int,
+        mem_req_perms: int,
+    ):
         PTE_WRITE_BIT = 0x002
         PTE_EXEC_BIT = 0x004
         PTE_DIRTY_BIT = 0x008
@@ -1157,7 +1524,7 @@ class VirtualMachine(object):
                     pte |= PTE_DIRTY_BIT
                     if dbg_walk_page:
                         print("write back page table DIRTY")
-                    self.memory[pte_ptr:pte_ptr + 8] = pte.to_bytes(8, "little")
+                    self.memory[pte_ptr : pte_ptr + 8] = pte.to_bytes(8, "little")
             elif mem_req_perms == MRQ_EXEC:
                 if pte & PTE_EXEC_BIT == 0:
                     self.virt_error_code = VME_PAGE_BAD_PERMS
@@ -1166,7 +1533,9 @@ class VirtualMachine(object):
         self.virt_error_code = VME_NONE
         self.virt_error_data = (0, 0, 0, 0)
 
-    def walk_page(self, virt_addr, tlpte, virt_mode=VM_4_LVL_9_BIT, mem_req_perms=MRQ_DONT_CHECK) -> Optional[int]:
+    def walk_page(
+        self, virt_addr, tlpte, virt_mode=VM_4_LVL_9_BIT, mem_req_perms=MRQ_DONT_CHECK
+    ) -> Optional[int]:
         # tlpte: top level page table entry
         mem = memoryview(self.memory)
         PTE_VALID_BIT = 0x001
@@ -1177,10 +1546,10 @@ class VirtualMachine(object):
         from_bytes = int.from_bytes
         dbg_walk_page = self.dbg_walk_page
         if virt_mode == VM_4_LVL_9_BIT:
-            PTE_MASK = 0xfffffffffffff000
-            PTE4_HMASK, PTE4_LMASK = 0xffffff8000000000, 0x7fffffffff
-            PTE3_HMASK, PTE3_LMASK = 0xffffffffc0000000, 0x3fffffff
-            PTE2_HMASK, PTE2_LMASK = 0xffffffffffe00000, 0x1fffff
+            PTE_MASK = 0xFFFFFFFFFFFFF000
+            PTE4_HMASK, PTE4_LMASK = 0xFFFFFF8000000000, 0x7FFFFFFFFF
+            PTE3_HMASK, PTE3_LMASK = 0xFFFFFFFFC0000000, 0x3FFFFFFF
+            PTE2_HMASK, PTE2_LMASK = 0xFFFFFFFFFFE00000, 0x1FFFFF
             if dbg_walk_page:
                 print("resolving from tlpte")
             if (tlpte & PTE_VALID_BIT) == 0:
@@ -1188,11 +1557,11 @@ class VirtualMachine(object):
                 self.virt_error_data = (0, tlpte, (0 << 3) | 0, virt_addr)
                 # self.trap(INT_PAGE_FAULT, 0, virt_addr, 0)
                 return
-            pte_4_index = ((virt_addr >> 39) & 0x1ff) << 3
+            pte_4_index = ((virt_addr >> 39) & 0x1FF) << 3
             pte_4_ptr = (tlpte & PTE_MASK) | pte_4_index
             if dbg_walk_page:
                 print("resolved pte_4_ptr=%016X from tlpte" % pte_4_ptr)
-            pte_4 = from_bytes(mem[pte_4_ptr:pte_4_ptr + 8], "little")
+            pte_4 = from_bytes(mem[pte_4_ptr : pte_4_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_4=%016X" % pte_4)
             if (pte_4 & PTE_VALID_BIT) == 0:
@@ -1201,13 +1570,15 @@ class VirtualMachine(object):
                 # self.trap(INT_PAGE_FAULT, pte_4_ptr, virt_addr, 1)
                 return
             elif pte_4 & PTE_HUGE_BIT:
-                self.check_perm_set_or_clr_error(tlpte, pte_4_ptr, pte_4_index, pte_4, virt_addr, mem_req_perms)
+                self.check_perm_set_or_clr_error(
+                    tlpte, pte_4_ptr, pte_4_index, pte_4, virt_addr, mem_req_perms
+                )
                 return (pte_4 & PTE4_HMASK) | (virt_addr & PTE4_LMASK)
-            pte_3_index = ((virt_addr >> 30) & 0x1ff) << 3
+            pte_3_index = ((virt_addr >> 30) & 0x1FF) << 3
             pte_3_ptr = (pte_4 & PTE_MASK) | pte_3_index
             if dbg_walk_page:
                 print("resolved pte_3_ptr=%016X from pte_4" % pte_3_ptr)
-            pte_3 = from_bytes(mem[pte_3_ptr:pte_3_ptr + 8], "little")
+            pte_3 = from_bytes(mem[pte_3_ptr : pte_3_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_3=%016X" % pte_3)
             if (pte_3 & PTE_VALID_BIT) == 0:
@@ -1216,13 +1587,15 @@ class VirtualMachine(object):
                 # self.trap(INT_PAGE_FAULT, pte_3_ptr, virt_addr, 2)
                 return
             elif pte_3 & PTE_HUGE_BIT:
-                self.check_perm_set_or_clr_error(pte_4, pte_3_ptr, pte_3_index, pte_3, virt_addr, mem_req_perms)
+                self.check_perm_set_or_clr_error(
+                    pte_4, pte_3_ptr, pte_3_index, pte_3, virt_addr, mem_req_perms
+                )
                 return (pte_3 & PTE3_HMASK) | (virt_addr & PTE3_LMASK)
-            pte_2_index = ((virt_addr >> 21) & 0x1ff) << 3
+            pte_2_index = ((virt_addr >> 21) & 0x1FF) << 3
             pte_2_ptr = (pte_3 & PTE_MASK) | pte_2_index
             if dbg_walk_page:
                 print("resolved pte_2_ptr=%016X from pte_3" % pte_2_ptr)
-            pte_2 = from_bytes(mem[pte_2_ptr:pte_2_ptr + 8], "little")
+            pte_2 = from_bytes(mem[pte_2_ptr : pte_2_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_2=%016X" % pte_2)
             if (pte_2 & PTE_VALID_BIT) == 0:
@@ -1231,13 +1604,15 @@ class VirtualMachine(object):
                 # self.trap(INT_PAGE_FAULT, pte_2_ptr, virt_addr, 3)
                 return
             elif pte_2 & PTE_HUGE_BIT:
-                self.check_perm_set_or_clr_error(pte_3, pte_2_ptr, pte_2_index, pte_2, virt_addr, mem_req_perms)
+                self.check_perm_set_or_clr_error(
+                    pte_3, pte_2_ptr, pte_2_index, pte_2, virt_addr, mem_req_perms
+                )
                 return (pte_2 & PTE2_HMASK) | (virt_addr & PTE2_LMASK)
-            pte_1_index = ((virt_addr >> 12) & 0x1ff) << 3
+            pte_1_index = ((virt_addr >> 12) & 0x1FF) << 3
             pte_1_ptr = (pte_2 & PTE_MASK) | pte_1_index
             if dbg_walk_page:
                 print("resolved pte_1_ptr=%016X from pte_2" % pte_1_ptr)
-            pte_1 = from_bytes(mem[pte_1_ptr:pte_1_ptr + 8], "little")
+            pte_1 = from_bytes(mem[pte_1_ptr : pte_1_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_1=%016X" % pte_1)
             if (pte_1 & PTE_VALID_BIT) == 0:
@@ -1245,13 +1620,15 @@ class VirtualMachine(object):
                 self.virt_error_data = (pte_2, pte_1_index, (0 << 3) | 4, virt_addr)
                 # self.trap(INT_PAGE_FAULT, pte_1_ptr, virt_addr, 4)
                 return
-            self.check_perm_set_or_clr_error(pte_2, pte_1_ptr, pte_1_index, pte_1, virt_addr, mem_req_perms)
+            self.check_perm_set_or_clr_error(
+                pte_2, pte_1_ptr, pte_1_index, pte_1, virt_addr, mem_req_perms
+            )
             return (pte_1 & PTE_MASK) | (virt_addr & 0xFFF)  # , pte_1 & 0xFFF
         elif virt_mode == VM_4_LVL_10_BIT:
-            PTE_MASK = 0xffffffffffffe000
-            PTE4_HMASK, PTE4_LMASK = 0xfffff80000000000, 0x7ffffffffff
-            PTE3_HMASK, PTE3_LMASK = 0xfffffffe00000000, 0x1ffffffff
-            PTE2_HMASK, PTE2_LMASK = 0xffffffffff800000, 0x7fffff
+            PTE_MASK = 0xFFFFFFFFFFFFE000
+            PTE4_HMASK, PTE4_LMASK = 0xFFFFF80000000000, 0x7FFFFFFFFFF
+            PTE3_HMASK, PTE3_LMASK = 0xFFFFFFFE00000000, 0x1FFFFFFFF
+            PTE2_HMASK, PTE2_LMASK = 0xFFFFFFFFFF800000, 0x7FFFFF
             if dbg_walk_page:
                 print("resolving from tlpte")
             # pte_4_ptr = (tlpte & PTE_MASK) | ((virt_addr >> 43) & 0x3ff)
@@ -1268,11 +1645,11 @@ class VirtualMachine(object):
                 self.virt_error_data = (0, tlpte, (0 << 3) | 0, virt_addr)
                 # self.trap(INT_PAGE_FAULT, 0, virt_addr, 0)
                 return
-            pte_4_index = ((virt_addr >> 43) & 0x3ff) << 3
+            pte_4_index = ((virt_addr >> 43) & 0x3FF) << 3
             pte_4_ptr = (tlpte & PTE_MASK) | pte_4_index
             if dbg_walk_page:
                 print("resolved pte_4_ptr=%016X from tlpte" % pte_4_ptr)
-            pte_4 = from_bytes(mem[pte_4_ptr:pte_4_ptr + 8], "little")
+            pte_4 = from_bytes(mem[pte_4_ptr : pte_4_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_4=%016X" % pte_4)
             if (pte_4 & PTE_VALID_BIT) == 0:
@@ -1281,13 +1658,15 @@ class VirtualMachine(object):
                 # self.trap(INT_PAGE_FAULT, pte_4_ptr, virt_addr, 1)
                 return
             elif pte_4 & PTE_HUGE_BIT:
-                self.check_perm_set_or_clr_error(tlpte, pte_4_ptr, pte_4_index, pte_4, virt_addr, mem_req_perms)
+                self.check_perm_set_or_clr_error(
+                    tlpte, pte_4_ptr, pte_4_index, pte_4, virt_addr, mem_req_perms
+                )
                 return (pte_4 & PTE4_HMASK) | (virt_addr & PTE4_LMASK)
-            pte_3_index = ((virt_addr >> 33) & 0x3ff) << 3
+            pte_3_index = ((virt_addr >> 33) & 0x3FF) << 3
             pte_3_ptr = (pte_4 & PTE_MASK) | pte_3_index
             if dbg_walk_page:
                 print("resolved pte_3_ptr=%016X from pte_4" % pte_3_ptr)
-            pte_3 = from_bytes(mem[pte_3_ptr:pte_3_ptr + 8], "little")
+            pte_3 = from_bytes(mem[pte_3_ptr : pte_3_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_3=%016X" % pte_3)
             if (pte_3 & PTE_VALID_BIT) == 0:
@@ -1296,13 +1675,15 @@ class VirtualMachine(object):
                 # self.trap(INT_PAGE_FAULT, pte_3_ptr, virt_addr, 2)
                 return
             elif pte_3 & PTE_HUGE_BIT:
-                self.check_perm_set_or_clr_error(pte_4, pte_3_ptr, pte_3_index, pte_3, virt_addr, mem_req_perms)
+                self.check_perm_set_or_clr_error(
+                    pte_4, pte_3_ptr, pte_3_index, pte_3, virt_addr, mem_req_perms
+                )
                 return (pte_3 & PTE3_HMASK) | (virt_addr & PTE3_LMASK)
-            pte_2_index = ((virt_addr >> 23) & 0x3ff) << 3
+            pte_2_index = ((virt_addr >> 23) & 0x3FF) << 3
             pte_2_ptr = (pte_3 & PTE_MASK) | pte_2_index
             if dbg_walk_page:
                 print("resolved pte_2_ptr=%016X from pte_3" % pte_2_ptr)
-            pte_2 = from_bytes(mem[pte_2_ptr:pte_2_ptr + 8], "little")
+            pte_2 = from_bytes(mem[pte_2_ptr : pte_2_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_2=%016X" % pte_2)
             if (pte_2 & PTE_VALID_BIT) == 0:
@@ -1311,13 +1692,15 @@ class VirtualMachine(object):
                 # self.trap(INT_PAGE_FAULT, pte_2_ptr, virt_addr, 3)
                 return
             elif pte_2 & PTE_HUGE_BIT:
-                self.check_perm_set_or_clr_error(pte_3, pte_2_ptr, pte_2_index, pte_2, virt_addr, mem_req_perms)
+                self.check_perm_set_or_clr_error(
+                    pte_3, pte_2_ptr, pte_2_index, pte_2, virt_addr, mem_req_perms
+                )
                 return (pte_2 & PTE2_HMASK) | (virt_addr & PTE2_LMASK)
-            pte_1_index = ((virt_addr >> 13) & 0x3ff) << 3
+            pte_1_index = ((virt_addr >> 13) & 0x3FF) << 3
             pte_1_ptr = (pte_2 & PTE_MASK) | pte_1_index
             if dbg_walk_page:
                 print("resolved pte_1_ptr=%016X from pte_2" % pte_1_ptr)
-            pte_1 = from_bytes(mem[pte_1_ptr:pte_1_ptr + 8], "little")
+            pte_1 = from_bytes(mem[pte_1_ptr : pte_1_ptr + 8], "little")
             if dbg_walk_page:
                 print("resolved pte_1=%016X" % pte_1)
             if (pte_1 & PTE_VALID_BIT) == 0:
@@ -1333,17 +1716,27 @@ class VirtualMachine(object):
                         if dbg_walk_page:
                             print("bad permissions")
                         self.virt_error_code = VME_PAGE_BAD_PERMS
-                        self.virt_error_data = (pte_2, pte_1_index, (1 << 3) | 4, virt_addr)
+                        self.virt_error_data = (
+                            pte_2,
+                            pte_1_index,
+                            (1 << 3) | 4,
+                            virt_addr,
+                        )
                         return
                     elif pte_1 & PTE_DIRTY_BIT == 0:
                         pte_1 |= PTE_DIRTY_BIT
                         if dbg_walk_page:
                             print("write back page table DIRTY")
-                        mem[pte_1_ptr:pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
+                        mem[pte_1_ptr : pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
                 elif mem_req_perms == MRQ_EXEC:
                     if pte_1 & PTE_EXEC_BIT == 0:
                         self.virt_error_code = VME_PAGE_BAD_PERMS
-                        self.virt_error_data = (pte_2, pte_1_index, (2 << 3) | 4, virt_addr)
+                        self.virt_error_data = (
+                            pte_2,
+                            pte_1_index,
+                            (2 << 3) | 4,
+                            virt_addr,
+                        )
             self.virt_error_code = VME_NONE
             self.virt_error_data = (0, 0, 0, 0)
             return (pte_1 & PTE_MASK) | (virt_addr & 0x1FFF)  # , pte_1 & 0x1FFF
@@ -1413,10 +1806,15 @@ class VirtualMachine(object):
     def copy_within(self, src: int, size: int, tgt: int):
         mem = self.memory
         size = min(size, len(mem) - tgt, len(mem) - src)
-        mem[tgt:tgt + size] = mem[src:src + size]
+        mem[tgt : tgt + size] = mem[src : src + size]
 
-    def trap(self, int_n: int, arg0: int=0, arg1: int=0, arg2: int=0, arg3: int=0):
-        raise Exception("interrupt %u (%s), reasons: %016X, %016X, %016X, %016X" % (int_n, INT_LST[int_n], arg0, arg1, arg2, arg3))
+    def trap(
+        self, int_n: int, arg0: int = 0, arg1: int = 0, arg2: int = 0, arg3: int = 0
+    ):
+        raise Exception(
+            "interrupt %u (%s), reasons: %016X, %016X, %016X, %016X"
+            % (int_n, INT_LST[int_n], arg0, arg1, arg2, arg3)
+        )
 
     def extract_zstr(self, addr: int, encoding: str) -> Optional[str]:
         data = bytearray()
@@ -1435,6 +1833,7 @@ class VirtualMachine(object):
         # n is syscall number
         if n == 0x21:
             from sys import stdout
+
             addr = self.get(8, self.sp + 8)
             if addr is None:
                 return
@@ -1453,6 +1852,7 @@ class VirtualMachine(object):
             print(a, b, c, d)
         elif n == 0x02:  # pygame_init
             import pygame
+
             idx = self.objects.put(pygame)
             self.pyg_index = idx
             self.set(8, self.sp + 32, idx)  # return idx as the object id
@@ -1475,7 +1875,9 @@ class VirtualMachine(object):
             self.set(8, self.sp + 32, idx)  # return idx as the object id
         elif n == 0x06:  # Surface.fill
             a = self.get(8, self.sp + 8)  # surf obj index
-            b = self.get(8, self.sp + 16)  # color/flags  LO-DWORD: color 0x??RRGGBB, HI-DWORD: flags
+            b = self.get(
+                8, self.sp + 16
+            )  # color/flags  LO-DWORD: color 0x??RRGGBB, HI-DWORD: flags
             c = self.get(8, self.sp + 24)  # rect left, top
             d = self.get(8, self.sp + 32)  # rect width, height
             # import pygame
@@ -1483,14 +1885,12 @@ class VirtualMachine(object):
             surf = self.objects[a]
             assert isinstance(surf, pygame.Surface)
             # print("in_virt: b = 0x%08X" % b)
-            color = (
-                (b & 0xFF0000) >> 16,
-                (b & 0xFF00) >> 8,
-                b & 0xFF
-            )
+            color = ((b & 0xFF0000) >> 16, (b & 0xFF00) >> 8, b & 0xFF)
             # print("in_virt: color =", color)
             flags = b >> 32
-            surf.fill(color, pygame.Rect(c & 0xFFFFFFFF, c >> 32, d & 0xFFFFFFFF, d >> 32))
+            surf.fill(
+                color, pygame.Rect(c & 0xFFFFFFFF, c >> 32, d & 0xFFFFFFFF, d >> 32)
+            )
         elif n == 0x07:  # pygame.display.update
             a = self.get(8, self.sp + 8)  # pygame
             b = self.get(8, self.sp + 16)  # pointer to array of rects to update
@@ -1498,7 +1898,12 @@ class VirtualMachine(object):
             pygame = self.objects[a]
             if c:
                 lst_rects = [
-                    pygame.Rect(self.get(4, off), self.get(4, off + 4), self.get(4, off + 8), self.get(4, off + 12))
+                    pygame.Rect(
+                        self.get(4, off),
+                        self.get(4, off + 4),
+                        self.get(4, off + 8),
+                        self.get(4, off + 12),
+                    )
                     for off in range(b, b + c * 16)
                 ]
                 pygame.display.update(lst_rects)
@@ -1511,7 +1916,9 @@ class VirtualMachine(object):
         elif n == 0x09:
             a = self.get(8, self.sp + 8)
             pygame = self.objects[a]
-            self.set(8, self.sp + 32, self.objects.put(pygame.event.wait()))  # return idx as the object id
+            self.set(
+                8, self.sp + 32, self.objects.put(pygame.event.wait())
+            )  # return idx as the object id
         elif n == 0x0A:  # delete object
             idx = self.get(8, self.sp + 8)
             del self.objects[idx]
@@ -1546,9 +1953,9 @@ class VirtualMachine(object):
                 self.set(4, c + 4, evt.button)
                 self.set(4, c + 8, evt.pos[0])
                 self.set(4, c + 12, evt.pos[1])
-        elif n == 0x0C: # get event type number by string key
+        elif n == 0x0C:  # get event type number by string key
             a = self.get(8, self.sp + 8)  # pygame
-            b = self.get(8, self.sp + 16) # pointer to string
+            b = self.get(8, self.sp + 16)  # pointer to string
             attr = self.extract_zstr(b, "utf8")
             pygame = self.objects[a]
             res = 0xFFFFFFFFFFFFFFFF
@@ -1575,31 +1982,40 @@ class VirtualMachine(object):
         in_virt_space = in_virt_space and self.virt_mem_mode != VM_DISABLED
         if in_virt_space:
             mem_v = memoryview(memory)
-            page_size = {
-                VM_4_LVL_9_BIT: 4096,
-                VM_4_LVL_10_BIT: 8192
-            }[self.virt_mem_mode]
-            page_mask = (page_size - 1)
+            page_size = {VM_4_LVL_9_BIT: 4096, VM_4_LVL_10_BIT: 8192}[
+                self.virt_mem_mode
+            ]
+            page_mask = page_size - 1
             assert at_addr & page_mask == 0, "must load progam at page boundary"
             end = at_addr + len(memory)
             end1 = (end | page_mask) ^ page_mask
             for addr in range(at_addr, end1, page_size):
                 mv = self.get_mv_as_priv(self.priv_lvl, page_size, addr, MRQ_DONT_CHECK)
-                mv[:] = mem_v[addr: addr + page_size]
+                mv[:] = mem_v[addr : addr + page_size]
             if end1 != end:
-                mv = self.get_mv_as_priv(self.priv_lvl, end - end1, end1, MRQ_DONT_CHECK)
+                mv = self.get_mv_as_priv(
+                    self.priv_lvl, end - end1, end1, MRQ_DONT_CHECK
+                )
                 mv[:] = mem_v[end1:]
         else:
             a = len(memory)
             b = len(self.memory)
             if a > b:
-                raise ValueError("Not Enough memory (given %u bytes when only %u are available" % (a, b))
+                raise ValueError(
+                    "Not Enough memory (given %u bytes when only %u are available"
+                    % (a, b)
+                )
             a += at_addr
             if a > b:
-                raise ValueError("Not Enough memory (given %u minus offset bytes when only %u are available" % (a, b))
+                raise ValueError(
+                    "Not Enough memory (given %u minus offset bytes when only %u are available"
+                    % (a, b)
+                )
             self.memory[at_addr:a] = memory
 
-    def get_mv_as_priv(self, priv_lvl: int, sz: int, addr: int, permissions: int) -> Optional[Union[memoryview, SplitMemView]]:
+    def get_mv_as_priv(
+        self, priv_lvl: int, sz: int, addr: int, permissions: int
+    ) -> Optional[Union[memoryview, SplitMemView]]:
         vmd = self.virt_mem_mode
         if vmd == VM_4_LVL_10_BIT:
             assert sz <= 8192
@@ -1614,11 +2030,13 @@ class VirtualMachine(object):
                 elif err_code == VME_PAGE_BAD_PERMS:
                     self.trap(INT_PROTECT_FAULT, *self.virt_error_data)
                 return
-            page_mask = [0, 0xfffffffffffff000, 0xffffffffffffe000, 0xfffff000][vmd]
+            page_mask = [0, 0xFFFFFFFFFFFFF000, 0xFFFFFFFFFFFFE000, 0xFFFFF000][vmd]
             if sz > 1 and (addr & page_mask) != ((addr + sz - 1) & page_mask):
                 index_mask = [0, 0xFFF, 0x1FFF, 0xFFF][vmd]
                 index_mask_p1 = index_mask + 1
-                addr1 = self.walk_page(addr + index_mask_p1, self.sys_regs[priv_lvl], vmd, permissions)
+                addr1 = self.walk_page(
+                    addr + index_mask_p1, self.sys_regs[priv_lvl], vmd, permissions
+                )
                 err_code = self.virt_error_code
                 if err_code:
                     if err_code == VME_PAGE_NOT_PRESENT:
@@ -1631,31 +2049,46 @@ class VirtualMachine(object):
                 addr = phys_addr
                 mem = memoryview(self.memory)
                 if addr + sz0 > len(mem):
-                    raise IndexError("Memory address out of bounds (Sz = %u, addr = %u)" % (sz0, addr))
+                    raise IndexError(
+                        "Memory address out of bounds (Sz = %u, addr = %u)"
+                        % (sz0, addr)
+                    )
                 elif addr1 + sz1 > len(mem):
-                    raise IndexError("Memory address out of bounds (Sz = %u, addr = %u)" % (sz1, addr1))
+                    raise IndexError(
+                        "Memory address out of bounds (Sz = %u, addr = %u)"
+                        % (sz1, addr1)
+                    )
                 if self.watch_memory:
-                    assert self.watch_memory == 1, "Only Exceptional watchpoints are supported"
+                    assert (
+                        self.watch_memory == 1
+                    ), "Only Exceptional watchpoints are supported"
                     for i, (perm, pt) in enumerate(self.watch_points):
                         if perm != permissions:
                             continue
                         if addr <= pt < addr + sz0 or addr1 <= pt < addr1 + sz1:
-                            raise Warning("Watchpoint %u encountered (perm = %u, pt = %u)" % (i, perm, pt))
-                return SplitMemView(mem[addr: addr + sz0], mem[addr1: addr1 + sz1])
+                            raise Warning(
+                                "Watchpoint %u encountered (perm = %u, pt = %u)"
+                                % (i, perm, pt)
+                            )
+                return SplitMemView(mem[addr : addr + sz0], mem[addr1 : addr1 + sz1])
             addr = phys_addr
         mem = memoryview(self.memory)
         assert isinstance(addr, int)
         assert isinstance(sz, int)
         if addr + sz > len(mem):
-            raise IndexError("Memory address out of bounds (Sz = %u, addr = %u)" % (sz, addr))
+            raise IndexError(
+                "Memory address out of bounds (Sz = %u, addr = %u)" % (sz, addr)
+            )
         if self.watch_memory:
             assert self.watch_memory == 1, "Only Exceptional watchpoints are supported"
             for i, (perm, pt) in enumerate(self.watch_points):
                 if perm != permissions:
                     continue
                 if addr <= pt < addr + sz:
-                    raise Warning("Watchpoint %u encountered (perm = %u, pt = %u)" % (i, perm, pt))
-        return mem[addr: addr + sz]
+                    raise Warning(
+                        "Watchpoint %u encountered (perm = %u, pt = %u)" % (i, perm, pt)
+                    )
+        return mem[addr : addr + sz]
 
     def get_as_priv(self, priv_lvl: int, sz: int, addr: int) -> Optional[int]:
         mem = self.get_mv_as_priv(priv_lvl, sz, addr, MRQ_READ)
@@ -1733,8 +2166,8 @@ class VirtualMachine(object):
         self.ip = addr
         self.bp = self.sp
 
-    def ret(self, n: int=0, r_sz: int=0):
-        self.ax = bytes(self.memory[self.sp:self.sp + r_sz])
+    def ret(self, n: int = 0, r_sz: int = 0):
+        self.ax = bytes(self.memory[self.sp : self.sp + r_sz])
         self.sp = self.bp
         self.ip = self.pop(8)
         self.bp = self.pop(8)
@@ -1746,6 +2179,7 @@ class VirtualMachine(object):
 
     def add_stack(self, n: int):
         self.sp -= n
+
     """
     def swap(self, sz: int):
         a = self.pop(sz)
@@ -1754,7 +2188,7 @@ class VirtualMachine(object):
         self.push(sz, b)
     """
 
-    def _push(self, sz: int, val: Union[int,float], typ: int=0) -> bool:
+    def _push(self, sz: int, val: Union[int, float], typ: int = 0) -> bool:
         # typ must be 0 for unsigned 1 for signed, 2 for float
         assert typ == 0 or typ == 1 or typ == 2, "Unrecognized TypeId %u" % typ
         mem = self.get_mv_as_priv(self.priv_lvl, sz, self.sp - sz, MRQ_WRITE)
@@ -1792,7 +2226,7 @@ class VirtualMachine(object):
         self.sp -= sz
         return True
 
-    def get_instr_dat(self, sz: int, typ: int=0) -> Optional[Union[int, float]]:
+    def get_instr_dat(self, sz: int, typ: int = 0) -> Optional[Union[int, float]]:
         # typ must be 0 for unsigned 1 for signed, 2 for float
         assert typ == 0 or typ == 1 or typ == 2, "Unrecognized TypeId %u" % typ
         mem = self.get_mv_as_priv(self.priv_lvl, sz, self.ip, MRQ_EXEC)
@@ -1821,7 +2255,7 @@ class VirtualMachine(object):
         self.ip += sz
         return rtn
 
-    def _pop(self, sz: int, typ: int=0) -> Optional[Union[int, float]]:
+    def _pop(self, sz: int, typ: int = 0) -> Optional[Union[int, float]]:
         # typ must be 0 for unsigned 1 for signed, 2 for float
         assert typ == 0 or typ == 1 or typ == 2, "Unrecognized TypeId %u" % typ
         mem = self.get_mv_as_priv(self.priv_lvl, sz, self.sp, MRQ_READ)
@@ -1901,7 +2335,9 @@ class VirtualMachine(object):
                 else:
                     raise
             if apic.int_ready:
-                self.switch_to_interrupt_direct(apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3)
+                self.switch_to_interrupt_direct(
+                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
+                )
 
     def switch_to_interrupt(self, int_n: int):
         old_sp = self.sp
@@ -1918,8 +2354,8 @@ class VirtualMachine(object):
         assert isr_ptr_h & 0x7FF == 0, "expected isr table to be aligned to 2048 bytes"
         isr_tgt = (
             0
-            if self.priv_lvl != 0 and isr_ptr_k == 0 else
-            self.get_as_priv(1, 8, isr_ptr_k | (int_n << 3))
+            if self.priv_lvl != 0 and isr_ptr_k == 0
+            else self.get_as_priv(1, 8, isr_ptr_k | (int_n << 3))
         )
         isr_priv = 1
         if isr_tgt == 0 and isr_ptr_h != 0:
@@ -1934,13 +2370,23 @@ class VirtualMachine(object):
         self.push(8, arg2)
         self.push(8, arg1)
         self.push(8, arg0)
-        self.push(8, old_flags)  # TODO: note that these flags will be checked to prevent privilege escalation
+        self.push(
+            8, old_flags
+        )  # TODO: note that these flags will be checked to prevent privilege escalation
         self.push(8, old_bp)
         self.push(8, old_ip)
         self.ip = isr_tgt
         self.bp = self.sp
 
-    def switch_to_interrupt_direct(self, int_n: int, arg0: int, arg1: int, arg2: int, arg3: int, target_hyper: bool=False):
+    def switch_to_interrupt_direct(
+        self,
+        int_n: int,
+        arg0: int,
+        arg1: int,
+        arg2: int,
+        arg3: int,
+        target_hyper: bool = False,
+    ):
         old_ip = self.ip
         old_bp = self.bp
         old_sp = self.sp
@@ -1951,8 +2397,8 @@ class VirtualMachine(object):
         assert isr_ptr_h & 0x7FF == 0, "expected isr table to be aligned to 2048 bytes"
         isr_tgt = (
             0
-            if self.priv_lvl != 0 and isr_ptr_k == 0 and not target_hyper else
-            self.get_as_priv(1, 8, isr_ptr_k | (int_n << 3))
+            if self.priv_lvl != 0 and isr_ptr_k == 0 and not target_hyper
+            else self.get_as_priv(1, 8, isr_ptr_k | (int_n << 3))
         )
         isr_priv = 1
         if isr_tgt == 0 and isr_ptr_h != 0:
@@ -1967,7 +2413,9 @@ class VirtualMachine(object):
         self.push(8, arg2)
         self.push(8, arg1)
         self.push(8, arg0)
-        self.push(8, old_flags)  # TODO: note that these flags will be checked to prevent privilege escalation
+        self.push(
+            8, old_flags
+        )  # TODO: note that these flags will be checked to prevent privilege escalation
         self.push(8, old_bp)
         self.push(8, old_ip)
         self.ip = isr_tgt
@@ -1983,7 +2431,9 @@ class VirtualMachine(object):
         self.reset_stack(56)
         self.sys_regs[SVSRB_SP | self.priv_lvl] = self.sp
         if ((old_flags >> 8) & 3) < self.priv_lvl:
-            self.switch_to_interrupt_direct(INT_PROTECT_FAULT, self.ip, old_flags, sp, self.bp, True)
+            self.switch_to_interrupt_direct(
+                INT_PROTECT_FAULT, self.ip, old_flags, sp, self.bp, True
+            )
             return
         self.set_flags(old_flags)
         self.bp = old_bp
@@ -2026,7 +2476,9 @@ class VirtualMachine(object):
                 else:
                     raise
             if apic.int_ready:
-                self.switch_to_interrupt_direct(apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3)
+                self.switch_to_interrupt_direct(
+                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
+                )
         return False
 
     def step(self):
@@ -2046,9 +2498,7 @@ class VirtualMachine(object):
     def get_stack_list(self, most_recent_call_last=False):
         ip = self.ip
         bp = self.bp
-        rtn = [
-            (ip, bp)
-        ]
+        rtn = [(ip, bp)]
         while bp < len(self.memory):
             ip = self.get(8, bp)
             bp = self.get(8, bp + 8)
@@ -2058,9 +2508,14 @@ class VirtualMachine(object):
         return rtn
 
     def print_stack_trace(self, most_recent_call_last=False):
-        print("\n".join([
-            "CodeAddr = 0x%04X, BasePointer = 0x%04X" % (ip, bp)
-            for ip, bp in self.get_stack_list(most_recent_call_last)]))
+        print(
+            "\n".join(
+                [
+                    "CodeAddr = 0x%04X, BasePointer = 0x%04X" % (ip, bp)
+                    for ip, bp in self.get_stack_list(most_recent_call_last)
+                ]
+            )
+        )
 
     def test_load(self, bcr: int, *args: int):
         typ = bcr & BCR_TYP_MASK
@@ -2090,7 +2545,7 @@ class VirtualMachine(object):
         self.priority = priority
 
     def set_flags_pri_priv(self, priority: int, priv_lvl: int):
-        mem_mode = self.sys_regs[SVSR_FLAGS] & 0x3c00
+        mem_mode = self.sys_regs[SVSR_FLAGS] & 0x3C00
         self.sys_regs[SVSR_FLAGS] = priority | (priv_lvl << 8) | mem_mode
         self.priv_lvl = priv_lvl
         self.priority = priority
@@ -2122,19 +2577,24 @@ VM = VirtualMachine
 def run_stack_vm_tests():
     vm = VM(512, 256)
     try:
-        vm.load_program(bytearray([
-            BC_LOAD, BCR_EA_R_IP | BCR_SZ_1, 12,
-            BC_HLT
-        ]))
+        vm.load_program(bytearray([BC_LOAD, BCR_EA_R_IP | BCR_SZ_1, 12, BC_HLT]))
         vm.execute()
         v = vm.pop(8)
         assert v == 15, "got %u" % v
-        vm.load_program(bytearray([
-            BC_LOAD, BCR_ABS_C | BCR_SZ_1, 13,
-            BC_LOAD, BCR_ABS_C | BCR_SZ_1, 21,
-            BC_ADD1,
-            BC_HLT
-        ]))
+        vm.load_program(
+            bytearray(
+                [
+                    BC_LOAD,
+                    BCR_ABS_C | BCR_SZ_1,
+                    13,
+                    BC_LOAD,
+                    BCR_ABS_C | BCR_SZ_1,
+                    21,
+                    BC_ADD1,
+                    BC_HLT,
+                ]
+            )
+        )
         vm.ip, vm.sp = 0, len(vm.memory)
         vm.bp, vm.running = vm.sp, 1
         vm.execute()
@@ -2187,21 +2647,29 @@ def stack_vm_syscall_tests():
     vm.push(4, 5724129)
     vm.push(8, 12)
     vm.push(1, 17)
-    print("\n  ".join([
-        "BEFORE:",
-        "sys_regs = %r" % vm.sys_regs,
-        "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
-        "priority = %u" % vm.priority,
-        "priv_lvl = %u" % vm.priv_lvl
-    ]))
+    print(
+        "\n  ".join(
+            [
+                "BEFORE:",
+                "sys_regs = %r" % vm.sys_regs,
+                "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
+                "priority = %u" % vm.priority,
+                "priv_lvl = %u" % vm.priv_lvl,
+            ]
+        )
+    )
     vm.execute()
-    print("\n  ".join([
-        "AFTER:",
-        "sys_regs = %r" % vm.sys_regs,
-        "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
-        "priority = %u" % vm.priority,
-        "priv_lvl = %u" % vm.priv_lvl
-    ]))
+    print(
+        "\n  ".join(
+            [
+                "AFTER:",
+                "sys_regs = %r" % vm.sys_regs,
+                "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
+                "priority = %u" % vm.priority,
+                "priv_lvl = %u" % vm.priv_lvl,
+            ]
+        )
+    )
     prev_ip = vm.test_load(BCR_R_BP1 | BCR_SZ_8, 0)
     prev_bp = vm.test_load(BCR_R_BP1 | BCR_SZ_8, 8)
     assert prev_ip == 2, "prev_ip = %u" % prev_ip
@@ -2215,21 +2683,29 @@ def stack_vm_syscall_tests():
     vm.memory[66] = BCRE_SYS
     vm.memory[prev_ip] = BC_HLT
     vm.push(8, 0)
-    print("\n  ".join([
-        "BEFORE(sysret):",
-        "sys_regs = %r" % vm.sys_regs,
-        "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
-        "priority = %u" % vm.priority,
-        "priv_lvl = %u" % vm.priv_lvl
-    ]))
+    print(
+        "\n  ".join(
+            [
+                "BEFORE(sysret):",
+                "sys_regs = %r" % vm.sys_regs,
+                "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
+                "priority = %u" % vm.priority,
+                "priv_lvl = %u" % vm.priv_lvl,
+            ]
+        )
+    )
     vm.execute()
-    print("\n  ".join([
-        "AFTER(sysret):",
-        "sys_regs = %r" % vm.sys_regs,
-        "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
-        "priority = %u" % vm.priority,
-        "priv_lvl = %u" % vm.priv_lvl
-    ]))
+    print(
+        "\n  ".join(
+            [
+                "AFTER(sysret):",
+                "sys_regs = %r" % vm.sys_regs,
+                "ip: %u, bp: %u, sp: %u" % (vm.ip, vm.bp, vm.sp),
+                "priority = %u" % vm.priority,
+                "priv_lvl = %u" % vm.priv_lvl,
+            ]
+        )
+    )
     assert vm.ip == 3, "vm.ip = %u" % vm.ip
     assert vm.bp == 256, "vm.bp = %u" % vm.bp
     assert vm.sp == 255, "vm.sp = %u" % vm.sp
@@ -2241,24 +2717,25 @@ def stack_vm_virt_mem_tests():
     mem = memoryview(vm.memory)
     from traceback import format_exc
     from sys import stderr
+
     try:
         PTE_VALID_BIT = 0x001
         vm.set_flags_pri_priv_mmd(vm.priority, vm.priv_lvl, VM_4_LVL_9_BIT)
-        vm.sys_regs[SVSR_KERNEL_PTE] = 0x1000 | PTE_VALID_BIT
-        mem[0x1000: 0x1008] = (PTE_VALID_BIT | 0x2000).to_bytes(8, "little")
+        vm.sys_regs[SVSR_KERNEL_TLPTR] = 0x1000 | PTE_VALID_BIT
+        mem[0x1000:0x1008] = (PTE_VALID_BIT | 0x2000).to_bytes(8, "little")
         for c in range(0x1008, 0x2000, 8):
-            mem[c: c + 8] = b"\0" * 8
-        mem[0x2000: 0x2008] = (PTE_VALID_BIT | 0x3000).to_bytes(8, "little")
+            mem[c : c + 8] = b"\0" * 8
+        mem[0x2000:0x2008] = (PTE_VALID_BIT | 0x3000).to_bytes(8, "little")
         for c in range(0x2008, 0x3000, 8):
-            mem[c: c + 8] = b"\0" * 8
-        mem[0x3000: 0x3008] = (PTE_VALID_BIT | 0x4000).to_bytes(8, "little")
+            mem[c : c + 8] = b"\0" * 8
+        mem[0x3000:0x3008] = (PTE_VALID_BIT | 0x4000).to_bytes(8, "little")
         for c in range(0x3008, 0x4000, 8):
-            mem[c: c + 8] = b"\0" * 8
-        mem[0x4000: 0x4008] = (PTE_VALID_BIT | 0x5000).to_bytes(8, "little")
+            mem[c : c + 8] = b"\0" * 8
+        mem[0x4000:0x4008] = (PTE_VALID_BIT | 0x5000).to_bytes(8, "little")
         for c in range(0x4008, 0x5000, 8):
-            mem[c: c + 8] = b"\0" * 8
+            mem[c : c + 8] = b"\0" * 8
         num = 12345678987654321
-        mem[0x5000: 0x5008] = num.to_bytes(8, "little")
+        mem[0x5000:0x5008] = num.to_bytes(8, "little")
         num1 = vm.get(8, 0)
         print("expected:", num, "actual:", num1)
         # TODO: test pages with all permissions enabled
@@ -2272,7 +2749,9 @@ def stack_vm_virt_mem_tests():
     vm.dbg_walk_page = False
     try:
         print("STEP 1")
-        insert_page_tables(vm, 0xFFFFFFFFFFFFF000, 1, 0x6000, 0x7000, 0x8000, 0x9000, 0xF)  # SHOULD NOT FAIL
+        insert_page_tables(
+            vm, 0xFFFFFFFFFFFFF000, 1, 0x6000, 0x7000, 0x8000, 0x9000, 0xF
+        )  # SHOULD NOT FAIL
         print("STEP 2")
         vm.get(8, 0xFFFFFFFFFFFFF000)  # SHOULD NOT FAIL
         print("STEP 3")
@@ -2290,7 +2769,7 @@ def stack_vm_virt_mem_tests():
         stderr.write("Expected failure\n")
     mem[0x5008] = BC_LOAD
     mem[0x5009] = BCR_ABS_C | BCR_SZ_8
-    mem[0x500A:0x500A + 8] = (12288 + 65536 + 16777219).to_bytes(8, "little")
+    mem[0x500A : 0x500A + 8] = (12288 + 65536 + 16777219).to_bytes(8, "little")
     mem[0x500A + 8] = BC_HLT
     vm.ip = 8
     vm.sp = 1 << 64
@@ -2313,7 +2792,18 @@ def stack_vm_virt_mem_tests():
     return vm
 
 
-def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: int, def1: int, def2: int, def3: int, perms: int, dbg_prn: bool=True, force_new_pte_1: bool=False):
+def insert_page_tables(
+    vm: VirtualMachine,
+    virt_addr: int,
+    priv_lvl: int,
+    def0: int,
+    def1: int,
+    def2: int,
+    def3: int,
+    perms: int,
+    dbg_prn: bool = True,
+    force_new_pte_1: bool = False,
+):
     """
     :param vm: virtual machine
     :param virt_addr: virtual address
@@ -2326,14 +2816,16 @@ def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: 
     :return: list of which of the page levels were created list[0] is True if it used the addess `def0` as a new page in the hierarchy
     """
     mem = memoryview(vm.memory)
-    assert vm.virt_mem_mode == VM_4_LVL_9_BIT, "this function only supports VM_4_LVL_9_BIT"
+    assert (
+        vm.virt_mem_mode == VM_4_LVL_9_BIT
+    ), "this function only supports VM_4_LVL_9_BIT"
     assert def0 & 0xFFF == 0
     assert def1 & 0xFFF == 0
     assert def2 & 0xFFF == 0
     assert def3 & 0xFFF == 0
     if dbg_prn:
         print("perms=", perms)
-    PTE_MASK = 0xfffffffffffff000
+    PTE_MASK = 0xFFFFFFFFFFFFF000
     PTE_VALID_BIT = 0x001
     PTE_HUGE_BIT = 0x010
     tlpte = vm.sys_regs[priv_lvl]
@@ -2343,33 +2835,33 @@ def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: 
     # TODO:   set the page pointer to the corresponding default the argunments to this function
     assert (tlpte & PTE_VALID_BIT) != 0
     lst_new = [False] * 4
-    pte_4_index = ((virt_addr >> 39) & 0x1ff) << 3
+    pte_4_index = ((virt_addr >> 39) & 0x1FF) << 3
     pte_4_ptr = (tlpte & PTE_MASK) | pte_4_index
-    pte_4_old = pte_4 = from_bytes(mem[pte_4_ptr:pte_4_ptr + 8], "little")
+    pte_4_old = pte_4 = from_bytes(mem[pte_4_ptr : pte_4_ptr + 8], "little")
     if (pte_4 & PTE_VALID_BIT) == 0:
         pte_4 = def0 | PTE_VALID_BIT
-        mem[pte_4_ptr: pte_4_ptr + 8] = pte_4.to_bytes(8, "little")
+        mem[pte_4_ptr : pte_4_ptr + 8] = pte_4.to_bytes(8, "little")
         lst_new[0] = True
     assert pte_4 & PTE_HUGE_BIT == 0
-    pte_3_index = ((virt_addr >> 30) & 0x1ff) << 3
+    pte_3_index = ((virt_addr >> 30) & 0x1FF) << 3
     pte_3_ptr = (pte_4 & PTE_MASK) | pte_3_index
-    pte_3_old = pte_3 = from_bytes(mem[pte_3_ptr:pte_3_ptr + 8], "little")
+    pte_3_old = pte_3 = from_bytes(mem[pte_3_ptr : pte_3_ptr + 8], "little")
     if (pte_3 & PTE_VALID_BIT) == 0:
         pte_3 = def1 | PTE_VALID_BIT
-        mem[pte_3_ptr: pte_3_ptr + 8] = pte_3.to_bytes(8, "little")
+        mem[pte_3_ptr : pte_3_ptr + 8] = pte_3.to_bytes(8, "little")
         lst_new[1] = True
     assert pte_3 & PTE_HUGE_BIT == 0
-    pte_2_index = ((virt_addr >> 21) & 0x1ff) << 3
+    pte_2_index = ((virt_addr >> 21) & 0x1FF) << 3
     pte_2_ptr = (pte_3 & PTE_MASK) | pte_2_index
-    pte_2_old = pte_2 = from_bytes(mem[pte_2_ptr:pte_2_ptr + 8], "little")
+    pte_2_old = pte_2 = from_bytes(mem[pte_2_ptr : pte_2_ptr + 8], "little")
     if (pte_2 & PTE_VALID_BIT) == 0:
         pte_2 = def2 | PTE_VALID_BIT
-        mem[pte_2_ptr: pte_2_ptr + 8] = pte_2.to_bytes(8, "little")
+        mem[pte_2_ptr : pte_2_ptr + 8] = pte_2.to_bytes(8, "little")
         lst_new[2] = True
     assert pte_2 & PTE_HUGE_BIT == 0
-    pte_1_index = ((virt_addr >> 12) & 0x1ff) << 3
+    pte_1_index = ((virt_addr >> 12) & 0x1FF) << 3
     pte_1_ptr = (pte_2 & PTE_MASK) | pte_1_index
-    pte_1_old = pte_1 = from_bytes(mem[pte_1_ptr:pte_1_ptr + 8], "little")
+    pte_1_old = pte_1 = from_bytes(mem[pte_1_ptr : pte_1_ptr + 8], "little")
     if pte_1 & 0xFFF != perms:
         pte_1 &= perms | PTE_MASK
         pte_1 |= perms
@@ -2379,13 +2871,13 @@ def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: 
         print("WARNING using existing PTE_1")
     assert pte_1 & PTE_HUGE_BIT == 0
     if pte_1_old != pte_1:
-        mem[pte_1_ptr: pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
+        mem[pte_1_ptr : pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
         lst_new[3] = True
     lst_pte = [
         (pte_4_old, pte_4),
         (pte_3_old, pte_3),
         (pte_2_old, pte_2),
-        (pte_1_old, pte_1)
+        (pte_1_old, pte_1),
     ]
     if dbg_prn:
         for c, b in enumerate(lst_new):
@@ -2395,9 +2887,13 @@ def insert_page_tables(vm: VirtualMachine, virt_addr: int, priv_lvl: int, def0: 
 
 
 class AdvPageAlloc(object):
-    def __init__(self, mv: Optional[Union[memoryview, bytearray]], mn: int, mx: int, pgsize: int):
+    def __init__(
+        self, mv: Optional[Union[memoryview, bytearray]], mn: int, mx: int, pgsize: int
+    ):
         if mv is not None:
-            assert (mx - mn + 7) // 8 <= len(mv), "memory view is not big enough to hold allocation bits"
+            assert (mx - mn + 7) // 8 <= len(
+                mv
+            ), "memory view is not big enough to hold allocation bits"
             self.mv = mv
         else:
             self.mv = bytearray((mx - mn + 7) // 8)
@@ -2434,7 +2930,15 @@ class AdvPageAlloc(object):
         self.mv[idx] &= mask
 
 
-def insert_page_tables_1(vm: VirtualMachine, virt_addr: int, priv_lvl: int, alloc: AdvPageAlloc, perms: int, dbg_prn: bool=True, force_new_pte_1: bool=False):
+def insert_page_tables_1(
+    vm: VirtualMachine,
+    virt_addr: int,
+    priv_lvl: int,
+    alloc: AdvPageAlloc,
+    perms: int,
+    dbg_prn: bool = True,
+    force_new_pte_1: bool = False,
+):
     """
     :param vm: virtual machine
     :param virt_addr: virtual address
@@ -2444,18 +2948,17 @@ def insert_page_tables_1(vm: VirtualMachine, virt_addr: int, priv_lvl: int, allo
     :return: list of which of the page levels were created list[0] is True if it used the addess `def0` as a new page in the hierarchy
     """
     if dbg_prn:
-        print("insert_page_tables(vm,\n  virt_addr = 0x%016X,\n  priv_lvl = %u,\n  alloc = %r\n  perms = %u,\n  dbg_prn = %r\n)" % (
-            virt_addr,
-            priv_lvl,
-            alloc,
-            perms,
-            dbg_prn
-        ))
+        print(
+            "insert_page_tables(vm,\n  virt_addr = 0x%016X,\n  priv_lvl = %u,\n  alloc = %r\n  perms = %u,\n  dbg_prn = %r\n)"
+            % (virt_addr, priv_lvl, alloc, perms, dbg_prn)
+        )
     mem = memoryview(vm.memory)
-    assert vm.virt_mem_mode == VM_4_LVL_9_BIT, "this function only supports VM_4_LVL_9_BIT"
+    assert (
+        vm.virt_mem_mode == VM_4_LVL_9_BIT
+    ), "this function only supports VM_4_LVL_9_BIT"
     if dbg_prn:
         print("perms=", perms)
-    PTE_MASK = 0xfffffffffffff000
+    PTE_MASK = 0xFFFFFFFFFFFFF000
     PTE_VALID_BIT = 0x001
     PTE_HUGE_BIT = 0x010
     acquired = []
@@ -2466,53 +2969,53 @@ def insert_page_tables_1(vm: VirtualMachine, virt_addr: int, priv_lvl: int, allo
         # TODO: instead of faulting when encountering an invalid page
         # TODO:   set the page pointer to the corresponding default the argunments to this function
         assert (tlpte & PTE_VALID_BIT) != 0
-        pte_4_index = ((virt_addr >> 39) & 0x1ff) << 3
+        pte_4_index = ((virt_addr >> 39) & 0x1FF) << 3
         pte_4_ptr = (tlpte & PTE_MASK) | pte_4_index
-        pte_4_old = pte_4 = from_bytes(mem[pte_4_ptr:pte_4_ptr + 8], "little")
+        pte_4_old = pte_4 = from_bytes(mem[pte_4_ptr : pte_4_ptr + 8], "little")
         if (pte_4 & PTE_VALID_BIT) == 0:
             def0 = alloc.alloc()
             pte_4 = def0 | PTE_VALID_BIT
             acquired.append((pte_4_ptr, pte_4_ptr + 8, def0, pte_4_old))
             if dbg_prn:
                 print("Injecting PTE_4 0x%016X at address 0x%016X" % (pte_4, pte_4_ptr))
-            mem[pte_4_ptr: pte_4_ptr + 8] = pte_4.to_bytes(8, "little")
+            mem[pte_4_ptr : pte_4_ptr + 8] = pte_4.to_bytes(8, "little")
         assert pte_4 & PTE_HUGE_BIT == 0
-        pte_3_index = ((virt_addr >> 30) & 0x1ff) << 3
+        pte_3_index = ((virt_addr >> 30) & 0x1FF) << 3
         pte_3_ptr = (pte_4 & PTE_MASK) | pte_3_index
-        pte_3_old = pte_3 = from_bytes(mem[pte_3_ptr:pte_3_ptr + 8], "little")
+        pte_3_old = pte_3 = from_bytes(mem[pte_3_ptr : pte_3_ptr + 8], "little")
         if (pte_3 & PTE_VALID_BIT) == 0:
             def1 = alloc.alloc()
             pte_3 = def1 | PTE_VALID_BIT
             acquired.append((pte_3_ptr, pte_3_ptr + 8, def1, pte_3_old))
             if dbg_prn:
                 print("Injecting PTE_3 0x%016X at address 0x%016X" % (pte_3, pte_3_ptr))
-            mem[pte_3_ptr: pte_3_ptr + 8] = pte_3.to_bytes(8, "little")
+            mem[pte_3_ptr : pte_3_ptr + 8] = pte_3.to_bytes(8, "little")
         assert pte_3 & PTE_HUGE_BIT == 0
-        pte_2_index = ((virt_addr >> 21) & 0x1ff) << 3
+        pte_2_index = ((virt_addr >> 21) & 0x1FF) << 3
         pte_2_ptr = (pte_3 & PTE_MASK) | pte_2_index
-        pte_2_old = pte_2 = from_bytes(mem[pte_2_ptr:pte_2_ptr + 8], "little")
+        pte_2_old = pte_2 = from_bytes(mem[pte_2_ptr : pte_2_ptr + 8], "little")
         if (pte_2 & PTE_VALID_BIT) == 0:
             def2 = alloc.alloc()
             pte_2 = def2 | PTE_VALID_BIT
             acquired.append((pte_2_ptr, pte_2_ptr + 8, def2, pte_2_old))
             if dbg_prn:
                 print("Injecting PTE_2 0x%016X at address 0x%016X" % (pte_2, pte_2_ptr))
-            mem[pte_2_ptr: pte_2_ptr + 8] = pte_2.to_bytes(8, "little")
+            mem[pte_2_ptr : pte_2_ptr + 8] = pte_2.to_bytes(8, "little")
         assert pte_2 & PTE_HUGE_BIT == 0
-        pte_1_index = ((virt_addr >> 12) & 0x1ff) << 3
+        pte_1_index = ((virt_addr >> 12) & 0x1FF) << 3
         pte_1_ptr = (pte_2 & PTE_MASK) | pte_1_index
-        pte_1_old = pte_1 = from_bytes(mem[pte_1_ptr:pte_1_ptr + 8], "little")
+        pte_1_old = pte_1 = from_bytes(mem[pte_1_ptr : pte_1_ptr + 8], "little")
         if (pte_1 & PTE_VALID_BIT) == 0 or force_new_pte_1:
             def3 = alloc.alloc()
             pte_1 = def3 | PTE_VALID_BIT | perms
             acquired.append((pte_1_ptr, pte_1_ptr + 8, def3, pte_1_old))
             if dbg_prn:
                 print("Injecting PTE_1 0x%016X at address 0x%016X" % (pte_1, pte_1_ptr))
-            mem[pte_1_ptr: pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
+            mem[pte_1_ptr : pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
         elif pte_1 & 0xFFF != perms:
             pte_1 &= perms | PTE_MASK
             pte_1 |= perms
-            mem[pte_1_ptr: pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
+            mem[pte_1_ptr : pte_1_ptr + 8] = pte_1.to_bytes(8, "little")
             if dbg_prn:
                 print("WARNING using existing PTE_1\n  Updating PTE_1 permissions")
         else:
@@ -2524,7 +3027,7 @@ def insert_page_tables_1(vm: VirtualMachine, virt_addr: int, priv_lvl: int, allo
                 (pte_4_old, pte_4),
                 (pte_3_old, pte_3),
                 (pte_2_old, pte_2),
-                (pte_1_old, pte_1)
+                (pte_1_old, pte_1),
             ]
             for c in range(len(lst_pte)):
                 old, cur = lst_pte[c]
@@ -2535,11 +3038,11 @@ def insert_page_tables_1(vm: VirtualMachine, virt_addr: int, priv_lvl: int, allo
             print("Failed to allocate, rolling back")
             for start, end, new, old in acquired:
                 print("restoring mem[0x%016X:0x%016X] to 0x%016X" % (start, end, old))
-                mem[start: end] = old.to_bytes(end - start, "little")
+                mem[start:end] = old.to_bytes(end - start, "little")
                 alloc.free(new)
         else:
             for start, end, old in acquired:
-                mem[start: end] = old.to_bytes(end - start, "little")
+                mem[start:end] = old.to_bytes(end - start, "little")
         return False
     return True
 
@@ -2635,7 +3138,16 @@ class PageAllocator(object):
         return self.max_addr
 
 
-def enable_virt_mem(vm: VirtualMachine, alloc: PageAllocator, priv_lvl: int, code_segment_start: int, code_segment_end: int, data_segment_start, data_segment_end: Optional[int], dbg_prn: bool=False):
+def enable_virt_mem(
+    vm: VirtualMachine,
+    alloc: PageAllocator,
+    priv_lvl: int,
+    code_segment_start: int,
+    code_segment_end: int,
+    data_segment_start,
+    data_segment_end: Optional[int],
+    dbg_prn: bool = False,
+):
     PTE_VALID_BIT = 0x001
     PTE_WRITE_BIT = 0x002
     PTE_EXEC_BIT = 0x004
@@ -2649,7 +3161,10 @@ def enable_virt_mem(vm: VirtualMachine, alloc: PageAllocator, priv_lvl: int, cod
     assert data_segment_start & 0xFFF == 0, "page alignment"
     assert data_segment_end is None or data_segment_end & 0xFFF == 0, "page alignment"
     if data_segment_end is not None:
-        assert code_segment_end <= data_segment_start or code_segment_start >= data_segment_end, "code and data segments cannot overlap"
+        assert (
+            code_segment_end <= data_segment_start
+            or code_segment_start >= data_segment_end
+        ), "code and data segments cannot overlap"
     else:
         if code_segment_start > data_segment_start:
             data_segment_end = code_segment_start
@@ -2657,27 +3172,36 @@ def enable_virt_mem(vm: VirtualMachine, alloc: PageAllocator, priv_lvl: int, cod
             assert code_segment_end <= data_segment_start
     for addr in range(code_segment_start, code_segment_end, 4096):
         assert insert_page_tables_1(
-            vm, addr, priv_lvl,
+            vm,
+            addr,
+            priv_lvl,
             adv_alloc,
             PTE_VALID_BIT | PTE_EXEC_BIT,
-            dbg_prn=dbg_prn, force_new_pte_1=True
+            dbg_prn=dbg_prn,
+            force_new_pte_1=True,
         )
     if data_segment_end is not None:
         for addr in range(data_segment_start, data_segment_end, 4096):
             assert insert_page_tables_1(
-                vm, addr, priv_lvl,
+                vm,
+                addr,
+                priv_lvl,
                 adv_alloc,
                 PTE_VALID_BIT | PTE_WRITE_BIT | PTE_DIRTY_BIT,
-                dbg_prn=dbg_prn, force_new_pte_1=True
+                dbg_prn=dbg_prn,
+                force_new_pte_1=True,
             )
         vm.sp = data_segment_end
     else:
         addr = data_segment_start
         while insert_page_tables_1(
-                vm, addr, priv_lvl,
-                adv_alloc,
-                PTE_VALID_BIT | PTE_WRITE_BIT | PTE_DIRTY_BIT,
-                dbg_prn=dbg_prn, force_new_pte_1=True
-            ):
+            vm,
+            addr,
+            priv_lvl,
+            adv_alloc,
+            PTE_VALID_BIT | PTE_WRITE_BIT | PTE_DIRTY_BIT,
+            dbg_prn=dbg_prn,
+            force_new_pte_1=True,
+        ):
             addr += 4096
         vm.sp = addr

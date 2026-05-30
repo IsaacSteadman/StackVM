@@ -91,18 +91,18 @@
       </tr>
       <tr>
         <td>0x08</td>
-        <td>KERNEL_PTE</td>
+        <td>KERNEL_TLPTR</td>
         <td>Kernel</td>
         <td>Kernel</td>
-        <td>Top Level Kernel Page Table Entry</td>
+        <td>Top Level Kernel Page Table Pointer (TLPTR &mdash; holds a pointer to the first-level page table PT1, not an entry in any table)</td>
         <td>V5 or greater</td>
       </tr>
       <tr>
         <td>0x09</td>
-        <td>USER_PTE</td>
+        <td>USER_TLPTR</td>
         <td>Kernel</td>
         <td>Kernel</td>
-        <td>Top Level User Page Table Entry</td>
+        <td>Top Level User Page Table Pointer (TLPTR &mdash; holds a pointer to the first-level page table PT1, not an entry in any table)</td>
         <td>V5 or greater</td>
       </tr>
     </tbody>
@@ -203,21 +203,21 @@
         <tr>
           <th>0</th>
           <td>
-            attempt resolve KERNEL_PTE <br />
-            if failed then resolve USER_PTE
+            attempt resolve KERNEL_TLPTR <br />
+            if failed then resolve USER_TLPTR
           </td>
           <td>
-            resolve USER_PTE
+            resolve USER_TLPTR
           </td>
         </tr>
         <tr>
           <th>1</th>
           <td>
-            attempt resolve KERNEL_PTE <br />
-            if failed then resolve USER_PTE
+            attempt resolve KERNEL_TLPTR <br />
+            if failed then resolve USER_TLPTR
           </td>
           <td>
-            resolve USER_PTE
+            resolve USER_TLPTR
           </td>
         </tr>
       </tbody>
@@ -235,7 +235,7 @@
         <tr>
           <th>0</th>
           <td>
-            resolve KERNEL_PTE
+            resolve KERNEL_TLPTR
           </td>
           <td>
             Fail
@@ -244,10 +244,10 @@
         <tr>
           <th>1</th>
           <td>
-            resolve USER_PTE
+            resolve USER_TLPTR
           </td>
           <td>
-            resolve USER_PTE
+            resolve USER_TLPTR
           </td>
         </tr>
       </tbody>

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Documentation | SYSREG</title>
@@ -616,8 +616,13 @@
       but can be generalized to all 4-level n bits per level and 2**(n + 3)
       bytes per page virtual memory modes
     </p>
-    <h4>SVSR_USER_PTE/SVSR_KERNEL_PTE</h4>
-    <p>points to a table (PT1 (Page Table 1)) indexed by vaddr part 1</p>
+    <h4>SVSR_USER_TLPTR/SVSR_KERNEL_TLPTR</h4>
+    <p>
+      Points to PT1 (Page Table 1), the first-level page table indexed by vaddr
+      part 1. Note: these registers use the <em>TLPTR</em> (Top Level Page Table
+      Pointer) naming convention &mdash; they hold a pointer to the root of the
+      page table hierarchy, not an entry within any table.
+    </p>
     <h4>Top Level Table (PT1 indexed by virt addr part 1) Entry</h4>
     <p>
       this entry sits in PT1 at index vaddr part 1 and points to a specific PT2

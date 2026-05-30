@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <iostream>
 #include <vector>
+#include <memory>
 #ifdef defined(_WIN64) || (defined(_WIN32) && !defined(__CYGWIN__))
 #define STACK_VM_EXPORT __declspec(dllexport)
 #else
@@ -30,7 +31,6 @@ enum StackVM_BC
   BC_CALL_E = 12,
   BC_RET_E = 13,
   BC_SYSRET = 14,
-  // TODO: change BC_SYSRET
   BC_INT = 15,
   BC_LSHIFT1 = 16,
   BC_LSHIFT2 = 17,
@@ -242,7 +242,7 @@ enum StackVM_BCRE
 enum StackVM_BCCE
 {
   BCCE_SYSCALL = 1 << 7,
-  BCCE_N_REL = 1 << 6,
+  BCCE_IS_REL = 1 << 6,
   BCCE_S_SYSN_SZ1 = 0 << 5,
   BCCE_S_SYSN_SZ2 = 1 << 5,
   BCCE_S_SYSN_SZ4 = 2 << 5,
@@ -266,9 +266,9 @@ enum StackVM_SVSR
   SVSRB_BP = 0x06,
   SVSR_KERNEL_BP = 0x06,
   SVSR_USER_BP = 0x07,
-  SVSRB_PTE = 0x08,
-  SVSR_KERNEL_PTE = 0x08,
-  SVSR_USER_PTE = 0x09
+  SVSRB_TLPTR = 0x08,
+  SVSR_KERNEL_TLPTR = 0x08,
+  SVSR_USER_TLPTR = 0x09
 };
 
 enum StackVM_INT
@@ -547,8 +547,8 @@ const uint8_t SVSR_REGISTER_PERMS[] = {
     0b0101, // KERNEL_SYS_FN
     0b0101, // KERNEL_SP
     0b1111, // USER_SP
-    0b0101, // KERNEL_PTE
-    0b0101, // USER_PTE
+    0b0101, // KERNEL_TLPTR
+    0b0101, // USER_TLPTR
 };
 
 const uint64_t SVSR_FLAGS_ILLEGAL_BITS_WRITE_MASK[] = {
@@ -851,7 +851,7 @@ protected:
       {
         if (msb)
         {
-          phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_PTE], mrq_perms);
+          phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_TLPTR], mrq_perms);
         }
         else
         {
@@ -865,11 +865,11 @@ protected:
       {
         if (msb)
         {
-          phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_PTE], mrq_perms);
+          phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_TLPTR], mrq_perms);
         }
         else
         {
-          phys_addr = walk_page(virt_addr, sys_regs[SVSR_KERNEL_PTE], mrq_perms);
+          phys_addr = walk_page(virt_addr, sys_regs[SVSR_KERNEL_TLPTR], mrq_perms);
         }
       }
     }
@@ -878,14 +878,14 @@ protected:
       uint64_t page_size_m1 = 0xFFFF'FFFF'FFFF'FFFF;
       if (priv_lvl == PRIV_USER)
       {
-        phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_PTE], mrq_perms);
+        phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_TLPTR], mrq_perms);
       }
       else // priv_lvl == PRIV_KERNEL
       {
-        phys_addr = walk_page(virt_addr, sys_regs[SVSR_KERNEL_PTE], mrq_perms);
+        phys_addr = walk_page(virt_addr, sys_regs[SVSR_KERNEL_TLPTR], mrq_perms);
         if (virt_error_data[0])
         {
-          phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_PTE], mrq_perms);
+          phys_addr = walk_page(virt_addr, sys_regs[SVSR_USER_TLPTR], mrq_perms);
         }
       }
     }
@@ -1364,7 +1364,7 @@ protected:
   {
     set_from(sp -= size, buf, size);
   }
-  void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_flags, uint64_t arg0 = 0, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0)
+  void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_bp, uint64_t prev_sp, uint64_t prev_flags, uint64_t arg0 = 0, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0)
   {
     uint64_t isr_table_ptr = sys_regs[SVSR_ISR];
     if (isr_table_ptr == 0)
@@ -1398,18 +1398,41 @@ protected:
 
     uint64_t flags_addr[2]; // { flags, addr }
     {
-      priv_lvl = PRIV_KERNEL; // switch so that we are getting memory under kernel privileges
+      // Temporarily switch to kernel privilege to read the ISR table
+      uint8_t saved_priv = priv_lvl;
+      priv_lvl = PRIV_KERNEL;
       calc_flags();
       MemoryView mv = get_memory_view(isr_table_ptr + int_n * 16, 16, MRQ_READ);
       mv.readatinto(0, (uint8_t *)flags_addr, 16);
-      sys_regs[SVSR_FLAGS] = flags_addr[0] & ~SVSR_FLAGS_PRIV_MASK; // Privilege bit is ignored and forced to 0 (KERNEL) for all interrupts
-      calc_from_flags();
+      priv_lvl = saved_priv;
+      calc_flags();
     }
 
-    // TODO: finish implementation of switch to interrupt
-    // [prev_sp] [prev_flags] [prev_bp] [prev_ip] TOP of stack
-    // need to be able to perform a stack trace to trace interrupt and regular function call execution across kernel and user space boundaries
-    }
+    // Privilege is always forced to KERNEL (0) for interrupt handlers
+    uint64_t isr_flags = flags_addr[0] & ~SVSR_FLAGS_PRIV_MASK;
+    uint8_t isr_priv = PRIV_KERNEL;
+
+    // Save caller's sp, then switch to the ISR's stack
+    sys_regs[SVSRB_SP + priv_lvl] = prev_sp;
+    sp = sys_regs[SVSRB_SP + isr_priv];
+
+    // Apply ISR flags (sets priv_lvl, virt_mem_mode, etc.)
+    sys_regs[SVSR_FLAGS] = isr_flags;
+    calc_from_flags();
+
+    // Push interrupt frame: [arg3][arg2][arg1][arg0][prev_flags][prev_bp][prev_ip] <- TOS
+    push(arg3);
+    push(arg2);
+    push(arg1);
+    push(arg0);
+    push(prev_flags);
+    push(prev_bp);
+    push(prev_ip);
+    bp = sp;
+
+    // Jump to ISR handler
+    ip = flags_addr[1];
+  }
 
   inline void calc_from_flags()
   {
@@ -1443,18 +1466,23 @@ protected:
     ip = pop_uint64();
     bp = pop_uint64();
   }
-  // writes back the SVSR stack pointer registers to synchronize the
-  //   userspace SP with SVSR_USER_SP
-  // modifies SVSR_FLAGS and its broken out components
-  // loads SVSR_KERNEL_SP into sp
-  // bp is unmodified and still points to userspace
-  // fails if priv_lvl is already 0
-  inline void switch_to_priv_simple(int priv_lvl)
+  // Switches from the current privilege level to new_priv_lvl.
+  // Saves current sp to sys_regs[SVSRB_SP + priv_lvl] and
+  // loads sys_regs[SVSRB_SP + new_priv_lvl] into sp.
+  // Updates FLAGS and broken-out fields via calc_from_flags().
+  // Throws INT_PROTECT_FAULT if already at new_priv_lvl.
+  inline void switch_to_priv_simple(int new_priv_lvl)
   {
-    // TODO
-    if (priv_lvl == 0)
-      ;
-    sys_regs[SVSRB_SP + priv_lvl] = sp;
+    if (this->priv_lvl == new_priv_lvl)
+    {
+      throw StackVM_TrapException(INT_PROTECT_FAULT);
+    }
+    sys_regs[SVSRB_SP + this->priv_lvl] = sp;
+    sp = sys_regs[SVSRB_SP + new_priv_lvl];
+    uint64_t flags = sys_regs[SVSR_FLAGS];
+    flags = (flags & ~SVSR_FLAGS_PRIV_MASK) | ((uint64_t)new_priv_lvl << SVSR_FLAGS_PRIV_SHFT);
+    sys_regs[SVSR_FLAGS] = flags;
+    calc_from_flags();
   }
   inline void set_flags_switch_to_priv(uint64_t new_flags)
   {
@@ -1462,7 +1490,8 @@ protected:
     if ((old_flags & SVSR_FLAGS_PRIV_MASK) != (new_flags & SVSR_FLAGS_PRIV_MASK))
     {
       int new_priv_lvl = (new_flags & SVSR_FLAGS_PRIV_MASK) >> SVSR_FLAGS_PRIV_SHFT;
-      // TODO
+      sys_regs[SVSRB_SP + this->priv_lvl] = sp;
+      sp = sys_regs[SVSRB_SP + new_priv_lvl];
     }
     sys_regs[SVSR_FLAGS] = new_flags;
     calc_from_flags();
@@ -2375,34 +2404,49 @@ protected:
         sp += size;
         if (virt_syscall)
         {
+          // Virtualized syscall mode: dispatch to host-provided handler, no kernel frame setup
           StackVM_TrapException::SimpleStruct err;
           virt_syscall(sys_n, &err);
         }
-        switch_to_priv_simple(0);
-        try
+        else
         {
-          MemoryView kernel_mv = get_memory_view(sp - (size + 25), size + 25, MRQ_WRITE);
-          for (size_t i = 0; i < size; ++i)
+          // Full emulation mode: set up kernel frame and jump to SVSR_SYS_FN
+          switch_to_priv_simple(0);
+          try
           {
-            kernel_mv[i + 25] = user_mv[i];
+            MemoryView kernel_mv = get_memory_view(sp - (size + 25), size + 25, MRQ_WRITE);
+            for (size_t i = 0; i < size; ++i)
+            {
+              kernel_mv[i + 25] = user_mv[i];
+            }
+            sp -= 25 + size;
+            kernel_mv.write(ip, 0);
+            kernel_mv.write(bp, 8);
+            kernel_mv.write(sys_n, 16);
+            kernel_mv[24] = num;
+            bp = sp;
+            ip = sys_regs[SVSR_SYS_FN];
           }
-          sp -= 25 + size;
-          kernel_mv.write(ip, 0);
-          kernel_mv.write(bp, 8);
-          kernel_mv.write(sys_n, 16);
-          kernel_mv[24] = num;
-          bp = sp;
-        }
-        catch (...)
-        {
-          sys_regs[SVSR_USER_SP] = prev_user_sp;
-          sys_regs[SVSR_KERNEL_SP] = prev_kernel_sp;
-          throw;
+          catch (...)
+          {
+            sys_regs[SVSR_USER_SP] = prev_user_sp;
+            sys_regs[SVSR_KERNEL_SP] = prev_kernel_sp;
+            throw;
+          }
         }
       }
       else
       {
-        // TODO
+        // Non-syscall extended call: BCCE_IS_REL (bit 6) selects relative vs absolute
+        uint64_t addr = pop_uint64();
+        if (extra & BCCE_IS_REL)
+        {
+          call(ip + (int64_t)addr);
+        }
+        else
+        {
+          call(addr);
+        }
       }
     }
     break;
@@ -2410,21 +2454,100 @@ protected:
     {
       if ((extra & BCRE_SYS) > 0)
       {
-        // TODO sysret
+        // Syscall return: copy return data from kernel stack back to user stack
+        uint64_t sz_copy = pop_uint64();
+        if (sz_copy > 2048)
+          sz_copy = 2048;
+        // Read return data while still in kernel privilege
+        uint8_t ret_buf[2048];
+        if (sz_copy > 0)
+        {
+          get_into(sp, ret_buf, sz_copy);
+        }
+        // Restore kernel frame (sp = bp, then pop fields)
+        sp = bp;
+        uint64_t prev_ip = pop_uint64();
+        uint64_t prev_bp = pop_uint64();
+        pop_uint64(); // stored sys_n (skip)
+        uint8_t num = get_uint8(sp);
+        sp += 1;
+        sp += ((size_t)num + 1) * 8; // skip args copied from user stack
+        sys_regs[SVSR_KERNEL_SP] = sp;
+        // Switch back to user privilege
+        uint64_t new_flags = sys_regs[SVSR_FLAGS] | SVSR_FLAGS_PRIV_MASK;
+        sys_regs[SVSR_FLAGS] = new_flags;
+        calc_from_flags();
+        // Copy return data onto user stack
+        sp = sys_regs[SVSR_USER_SP];
+        sp -= sz_copy;
+        if (sz_copy > 0)
+        {
+          set_from(sp, ret_buf, sz_copy);
+        }
+        bp = prev_bp;
+        ip = prev_ip;
       }
       else
       {
-        // TODO
+        // Non-syscall extended return
+        // Pop RST_SP value (size class in bits 6:5)
+        uint64_t rst_sp = 0;
+        switch ((extra >> 5) & 3)
+        {
+        case 0:
+          rst_sp = pop_uint8();
+          break;
+        case 1:
+          rst_sp = pop_uint16();
+          break;
+        case 2:
+          rst_sp = pop_uint32();
+          break;
+        case 3:
+          rst_sp = pop_uint64();
+          break;
+        }
+        // Pop res_sz value (size class in bits 4:3)
+        uint64_t res_sz = 0;
+        switch ((extra >> 3) & 3)
+        {
+        case 0:
+          res_sz = pop_uint8();
+          break;
+        case 1:
+          res_sz = pop_uint16();
+          break;
+        case 2:
+          res_sz = pop_uint32();
+          break;
+        case 3:
+          res_sz = pop_uint64();
+          break;
+        }
+        // Save result (up to 8 bytes) into ax; caller retrieves via LOAD BCR_RES
+        ax = 0;
+        if (res_sz > 0)
+        {
+          get_into(sp, (uint8_t *)&ax, (res_sz < 8) ? (size_t)res_sz : 8);
+        }
+        // Stack switch and pop return frame
+        sp = bp;
+        ip = pop_uint64();
+        bp = pop_uint64();
+        // Clear caller's args
+        sp += rst_sp;
       }
     }
     break;
+    case BC_SYSRET:
+      throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
     case BC_INT:
     {
       const uint64_t arg0 = pop_uint64();
       const uint64_t arg1 = pop_uint64();
       const uint64_t arg2 = pop_uint64();
       const uint64_t arg3 = pop_uint64();
-      trap(extra, arg0, arg1, arg2, arg3);
+      trap(extra, ip, bp, sp, sys_regs[SVSR_FLAGS], arg0, arg1, arg2, arg3);
     }
     break;
     case BC_LSHIFT1:
@@ -3202,17 +3325,37 @@ protected:
     }
     break;
     case BC_CALL:
-      // TODO
-      break;
+    {
+      uint64_t addr = pop_uint64();
+      call(addr);
+    }
+    break;
     case BC_RCALL:
-      // TODO
-      break;
+    {
+      int64_t offset = pop_int64();
+      call(ip + offset);
+    }
+    break;
     case BC_RET:
-      // TODO:
+      ret();
       break;
     case BC_RET_N2:
-      // TODO:
-      break;
+    {
+      // IRET: restore cpu state from interrupt frame at bp
+      // Frame layout from TOS: [prev_ip][prev_bp][prev_flags][arg0][arg1][arg2][arg3]
+      sp = bp;
+      uint64_t prev_ip = pop_uint64();
+      uint64_t prev_bp = pop_uint64();
+      uint64_t prev_flags = pop_uint64();
+      sp += 32; // skip arg0, arg1, arg2, arg3
+      // Save current (kernel) sp after frame cleanup
+      sys_regs[SVSR_KERNEL_SP] = sp;
+      ip = prev_ip;
+      bp = prev_bp;
+      // Restore flags; switches sp back to original privilege level's stack if priv changed
+      set_flags_switch_to_priv(prev_flags);
+    }
+    break;
     }
   }
 
@@ -3236,7 +3379,7 @@ public:
         sp = prev_sp;
         sys_regs[SVSR_FLAGS] = prev_flags;
         calc_from_flags();
-        trap(exc.int_n, prev_ip, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
+        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
       }
     }
   }
@@ -3244,8 +3387,82 @@ public:
 
 extern "C"
 {
+  // StackVMExported: thin public subclass used by the C export API
+  struct StackVMExported : public StackVM
+  {
+    std::unique_ptr<uint8_t[]> owned_memory;
+
+    explicit StackVMExported(size_t mem_size) : StackVM(nullptr)
+    {
+      owned_memory = std::make_unique<uint8_t[]>(mem_size);
+      set_memory(owned_memory.get(), mem_size);
+      memsize = mem_size; // set_memory doesn't assign memsize
+    }
+
+    uint64_t pub_sp() { return sp; }
+    void pub_set_sp(uint64_t v) { sp = v; }
+    uint64_t pub_bp() { return bp; }
+    void pub_set_bp(uint64_t v) { bp = v; }
+    uint64_t pub_ip() { return ip; }
+    void pub_set_ip(uint64_t v) { ip = v; }
+    uint64_t pub_ax() { return ax; }
+    uint8_t pub_running() { return running; }
+    void pub_set_running(uint8_t v) { running = v; }
+    uint8_t *pub_memory() { return memory; }
+    size_t pub_memsize() { return memsize; }
+    uint64_t pub_sysreg(uint8_t n) { return sys_regs[n]; }
+    void pub_set_sysreg(uint8_t n, uint64_t v) { sys_regs[n] = v; }
+    void pub_set_flags(uint64_t flags) { sys_regs[SVSR_FLAGS] = flags; calc_from_flags(); }
+    void pub_set_virt_syscall(VirtSyscall fn) { virt_syscall = fn; }
+
+    void pub_step()
+    {
+      const uint64_t prev_ip = ip;
+      const uint64_t prev_bp = bp;
+      const uint64_t prev_sp = sp;
+      const uint64_t prev_flags = sys_regs[SVSR_FLAGS];
+      try
+      {
+        execute_once();
+      }
+      catch (StackVM_TrapException &exc)
+      {
+        ip = prev_ip;
+        bp = prev_bp;
+        sp = prev_sp;
+        sys_regs[SVSR_FLAGS] = prev_flags;
+        calc_from_flags();
+        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
+      }
+    }
+  };
+
   STACK_VM_EXPORT void *make_stack_vm(size_t memory_size)
   {
-    ;
+    return new StackVMExported(memory_size);
   }
+  STACK_VM_EXPORT void destroy_stack_vm(void *vm)
+  {
+    delete static_cast<StackVMExported *>(vm);
+  }
+  STACK_VM_EXPORT uint64_t vm_get_sp(void *vm) { return static_cast<StackVMExported *>(vm)->pub_sp(); }
+  STACK_VM_EXPORT void vm_set_sp(void *vm, uint64_t v) { static_cast<StackVMExported *>(vm)->pub_set_sp(v); }
+  STACK_VM_EXPORT uint64_t vm_get_bp(void *vm) { return static_cast<StackVMExported *>(vm)->pub_bp(); }
+  STACK_VM_EXPORT void vm_set_bp(void *vm, uint64_t v) { static_cast<StackVMExported *>(vm)->pub_set_bp(v); }
+  STACK_VM_EXPORT uint64_t vm_get_ip(void *vm) { return static_cast<StackVMExported *>(vm)->pub_ip(); }
+  STACK_VM_EXPORT void vm_set_ip(void *vm, uint64_t v) { static_cast<StackVMExported *>(vm)->pub_set_ip(v); }
+  STACK_VM_EXPORT uint64_t vm_get_ax(void *vm) { return static_cast<StackVMExported *>(vm)->pub_ax(); }
+  STACK_VM_EXPORT uint8_t vm_get_running(void *vm) { return static_cast<StackVMExported *>(vm)->pub_running(); }
+  STACK_VM_EXPORT void vm_set_running(void *vm, uint8_t v) { static_cast<StackVMExported *>(vm)->pub_set_running(v); }
+  STACK_VM_EXPORT uint8_t *vm_get_memory(void *vm) { return static_cast<StackVMExported *>(vm)->pub_memory(); }
+  STACK_VM_EXPORT size_t vm_get_memsize(void *vm) { return static_cast<StackVMExported *>(vm)->pub_memsize(); }
+  STACK_VM_EXPORT uint64_t vm_get_sysreg(void *vm, uint8_t n) { return static_cast<StackVMExported *>(vm)->pub_sysreg(n); }
+  STACK_VM_EXPORT void vm_set_sysreg(void *vm, uint8_t n, uint64_t v) { static_cast<StackVMExported *>(vm)->pub_set_sysreg(n, v); }
+  STACK_VM_EXPORT void vm_set_flags(void *vm, uint64_t flags) { static_cast<StackVMExported *>(vm)->pub_set_flags(flags); }
+  STACK_VM_EXPORT void vm_set_virt_syscall(void *vm, void (*fn)(uint64_t, StackVM_TrapException::SimpleStruct *))
+  {
+    static_cast<StackVMExported *>(vm)->pub_set_virt_syscall(fn);
+  }
+  STACK_VM_EXPORT void vm_step(void *vm) { static_cast<StackVMExported *>(vm)->pub_step(); }
+  STACK_VM_EXPORT void vm_execute(void *vm) { static_cast<StackVMExported *>(vm)->execute(); }
 }

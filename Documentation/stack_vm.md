@@ -195,5 +195,5 @@ StackVm System Registers (SVSR)
 - Register 0x05: (SVSR_USER_SP) user stack pointer
 - Register 0x06: (SVSR_KERNEL_BP) kernel base pointer
 - Register 0x07: (SVSR_USER_BP) user base pointer
-- Register 0x08: (SVSR_KERNEL_PTE) top level kernel page table entry
-- Register 0x09: (SVSR_USER_PTE) top level user page table entry
+- Register 0x08: (SVSR_KERNEL_TLPTR) top level kernel page table pointer
+- Register 0x09: (SVSR_USER_TLPTR) top level user page table pointer
