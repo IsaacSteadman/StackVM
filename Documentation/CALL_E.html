@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Documentation | CALL_E</title>
@@ -40,7 +40,8 @@
           <td rowspan="2">Meaning</td>
           <td>IS_SYS=0</td>
           <td>IS_REL</td>
-          <td colspan="6">TBD (All 0)</td>
+          <td>IS_INT</td>
+          <td colspan="5">TBD (All 0)</td>
         </tr>
         <tr class="inf">
           <td>IS_SYS=1</td>
@@ -52,6 +53,15 @@
     </table>
     <p>IS_REL=0 performs an absolute call to the address (ip = addr).</p>
     <p>IS_REL=1 performs a relative call to the address (ip += addr).</p>
+    <p>
+      IS_INT=1 (and IS_SYS=0) performs a software interrupt. The address on the
+      stack is <strong>not</strong> consumed; instead a single additional byte
+      following the flags byte specifies the interrupt number (int_n). The
+      processor saves the current context and switches to the kernel interrupt
+      handler for int_n via the ISR table (see
+      <a href="Interrupts.html">Interrupts</a>). IS_REL is ignored when
+      IS_INT=1.
+    </p>
     <p>
       A table mapping each size to its corresponding size code is displayed
       below.

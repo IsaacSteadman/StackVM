@@ -1,0 +1,248 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM Instruction Documentation | INT128</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>INT128 / BITOP (Extended 128-bit &amp; Bit-Operation Group)</h1>
+    <p>
+      INT128 is opcode 0x0E. The byte immediately following the opcode selects
+      the sub-operation. All arithmetic sub-operations work on 128-bit (16-byte)
+      values. POPCNT and BSWAP sub-operations work on smaller operands.
+    </p>
+    <p>
+      <strong>Note:</strong> This opcode replaces the old SYSRET (0x0E) opcode.
+    </p>
+
+    <h2>128-bit Arithmetic Sub-Operations</h2>
+    <p>
+      For arithmetic sub-ops the stack must contain two 16-byte (128-bit)
+      operands. The top-of-stack is the right-hand operand (b) and the value
+      below it is the left-hand operand (a). The result is a single 16-byte
+      value pushed onto the stack.
+    </p>
+    <div>
+      <h3>Stack Diagram (binary ops)</h3>
+      <ul class="stack">
+        <li>
+          <span class="kw-type">UInt128/Int128</span>
+          <span class="kw-var">a</span>
+        </li>
+        <li>
+          <span class="kw-type">UInt128/Int128</span>
+          <span class="kw-var">b</span>
+        </li>
+      </ul>
+      <span>->INT128(sub_op)-></span>
+      <ul class="stack">
+        <li>
+          <span class="kw-type">UInt128/Int128</span>
+          <span class="kw-var">result</span>
+        </li>
+      </ul>
+    </div>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Sub-Op Code</th>
+          <th>Name</th>
+          <th>Operation</th>
+          <th>Signed?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x00</td>
+          <td>ADD128U</td>
+          <td>a + b (mod 2<sup>128</sup>)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x01</td>
+          <td>ADD128S</td>
+          <td>a + b (signed wrapping)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>0x02</td>
+          <td>SUB128U</td>
+          <td>a - b (mod 2<sup>128</sup>)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x03</td>
+          <td>SUB128S</td>
+          <td>a - b (signed wrapping)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>0x04</td>
+          <td>MUL128U</td>
+          <td>a * b (mod 2<sup>128</sup>)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x05</td>
+          <td>MUL128S</td>
+          <td>a * b (signed wrapping)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>0x06</td>
+          <td>DIV128U</td>
+          <td>a / b (unsigned)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x07</td>
+          <td>DIV128S</td>
+          <td>a / b (signed)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>0x08</td>
+          <td>MOD128U</td>
+          <td>a % b (unsigned)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x09</td>
+          <td>MOD128S</td>
+          <td>a % b (signed)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>0x0A</td>
+          <td>AND128</td>
+          <td>a &amp; b</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x0B</td>
+          <td>OR128</td>
+          <td>a | b</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x0C</td>
+          <td>XOR128</td>
+          <td>a ^ b</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x0D</td>
+          <td>NOT128</td>
+          <td>~a (pops 1 operand)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x0E</td>
+          <td>LSHIFT128</td>
+          <td>a &lt;&lt; b</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x0F</td>
+          <td>RSHIFT128U</td>
+          <td>a &gt;&gt; b (logical)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x10</td>
+          <td>RSHIFT128S</td>
+          <td>a &gt;&gt; b (arithmetic)</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>0x11</td>
+          <td>CMP128U</td>
+          <td>compare a, b → Int64 (-1/0/1)</td>
+          <td>No</td>
+        </tr>
+        <tr>
+          <td>0x12</td>
+          <td>CMP128S</td>
+          <td>compare a, b → Int64 (-1/0/1)</td>
+          <td>Yes</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>POPCNT Sub-Operations (Population Count)</h2>
+    <p>
+      Count the number of set (1) bits in an N-byte value. Pops N bytes, pushes
+      a 1-byte count.
+    </p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Sub-Op Code</th>
+          <th>Name</th>
+          <th>Input Size</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x13</td>
+          <td>POPCNT1</td>
+          <td>1 byte</td>
+        </tr>
+        <tr>
+          <td>0x14</td>
+          <td>POPCNT2</td>
+          <td>2 bytes</td>
+        </tr>
+        <tr>
+          <td>0x15</td>
+          <td>POPCNT4</td>
+          <td>4 bytes</td>
+        </tr>
+        <tr>
+          <td>0x16</td>
+          <td>POPCNT8</td>
+          <td>8 bytes</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>BSWAP Sub-Operations (Byte Swap)</h2>
+    <p>
+      Reverse the byte order of an N-byte value in place (endianness swap). Pops
+      N bytes, pushes N bytes.
+    </p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Sub-Op Code</th>
+          <th>Name</th>
+          <th>Size</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x17</td>
+          <td>BSWAP2</td>
+          <td>2 bytes (16-bit)</td>
+        </tr>
+        <tr>
+          <td>0x18</td>
+          <td>BSWAP4</td>
+          <td>4 bytes (32-bit)</td>
+        </tr>
+        <tr>
+          <td>0x19</td>
+          <td>BSWAP8</td>
+          <td>8 bytes (64-bit)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Encoding</h2>
+    <p>
+      An INT128 instruction is always 2 bytes: <code>[0x0E][sub_op]</code>.
+      Sub-op values 0x1A and above are reserved.
+    </p>
+  </body>
+</html>

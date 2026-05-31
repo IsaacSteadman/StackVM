@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Set</title>
@@ -181,16 +181,16 @@
           <td>RET_E</td>
           <td>0b00001101</td>
         </tr>
-        <tr class="inf">
-          <td>SYSREG</td>
+        <tr>
+          <td>INT128</td>
           <td>0b00001110</td>
-          <td>SYSREG</td>
+          <td>INT128</td>
           <td>0b00001110</td>
         </tr>
-        <tr class="in_design">
-          <td>INT</td>
+        <tr>
+          <td>INVTLB</td>
           <td>0b00001111</td>
-          <td>INT</td>
+          <td>INVTLB</td>
           <td>0b00001111</td>
         </tr>
         <tr>
@@ -233,40 +233,40 @@
           <td>RSHIFT8</td>
           <td>0b00010111</td>
         </tr>
-        <tr class="deprecated">
-          <td rowspan="4">LROT</td>
+        <tr>
+          <td rowspan="4">CLZ</td>
           <td rowspan="4">0b000110**</td>
-          <td>LROT1</td>
+          <td>CLZ1</td>
           <td>0b00011000</td>
         </tr>
-        <tr class="deprecated">
-          <td>LROT2</td>
+        <tr>
+          <td>CLZ2</td>
           <td>0b00011001</td>
         </tr>
-        <tr class="deprecated">
-          <td>LROT4</td>
+        <tr>
+          <td>CLZ4</td>
           <td>0b00011010</td>
         </tr>
-        <tr class="deprecated">
-          <td>LROT8</td>
+        <tr>
+          <td>CLZ8</td>
           <td>0b00011011</td>
         </tr>
-        <tr class="deprecated">
-          <td rowspan="4">RROT</td>
+        <tr>
+          <td rowspan="4">CTZ</td>
           <td rowspan="4">0b000111**</td>
-          <td>RROT1</td>
+          <td>CTZ1</td>
           <td>0b00011100</td>
         </tr>
-        <tr class="deprecated">
-          <td>RROT2</td>
+        <tr>
+          <td>CTZ2</td>
           <td>0b00011101</td>
         </tr>
-        <tr class="deprecated">
-          <td>RROT4</td>
+        <tr>
+          <td>CTZ4</td>
           <td>0b00011110</td>
         </tr>
-        <tr class="deprecated">
-          <td>RROT8</td>
+        <tr>
+          <td>CTZ8</td>
           <td>0b00011111</td>
         </tr>
         <tr>
@@ -705,8 +705,8 @@
           <td>RET</td>
           <td>0b01111110</td>
         </tr>
-        <tr class="in_design">
-          <td>IRET</td>
+        <tr>
+          <td>INV_OPCODE</td>
           <td>0b01111111</td>
         </tr>
       </tbody>

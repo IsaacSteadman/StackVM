@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM Instruction Documentation | INVTLB</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>INVTLB (TLB Invalidation Group)</h1>
+    <p>
+      INVTLB is opcode 0x0F. The byte immediately following the opcode selects
+      the sub-operation. INVTLB instructions are privileged and may only be
+      executed at kernel privilege level (priv_lvl = 0).
+    </p>
+    <p>
+      <strong>Note:</strong> This opcode replaces the old INT (0x0F) opcode.
+      Software interrupts are now issued via
+      <a href="CALL_E.html">CALL_E</a> with the IS_INT flag.
+    </p>
+
+    <h2>Sub-Operations</h2>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Sub-Op Code</th>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Stack Effect</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x00</td>
+          <td>INVTLB_BEGIN</td>
+          <td>
+            Begin a TLB shootdown sequence. Pops the target TLB pointer
+            (<code>tlptr</code>), the virtual address base
+            (<code>vaddr_base</code>), and the region size
+            (<code>vaddr_size</code>) from the stack. The implementation may
+            send an IPI to all other cores to invalidate the specified range.
+          </td>
+          <td>[UInt64 tlptr, UInt64 vaddr_base, UInt64 vaddr_size] -&gt; []</td>
+        </tr>
+        <tr>
+          <td>0x01</td>
+          <td>INVTLB_COMMIT</td>
+          <td>
+            Commit the TLB invalidation initiated by INVTLB_BEGIN. Clears the
+            pending invalidation state. Must be called after INVTLB_BEGIN.
+          </td>
+          <td>[] -&gt; []</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Stack Diagram (INVTLB_BEGIN)</h2>
+    <div>
+      <ul class="stack">
+        <li>
+          <span class="kw-type">UInt64</span>
+          <span class="kw-var">tlptr</span>
+        </li>
+        <li>
+          <span class="kw-type">UInt64</span>
+          <span class="kw-var">vaddr_base</span>
+        </li>
+        <li>
+          <span class="kw-type">UInt64</span>
+          <span class="kw-var">vaddr_size</span>
+        </li>
+      </ul>
+      <span>->INVTLB_BEGIN-></span>
+      <ul class="stack">
+        <li>(empty)</li>
+      </ul>
+    </div>
+
+    <h2>Encoding</h2>
+    <p>
+      An INVTLB instruction is always 2 bytes: <code>[0x0F][sub_op]</code>.
+      Sub-op values 0x02 and above are reserved.
+    </p>
+
+    <h2>Privilege</h2>
+    <p>
+      Both sub-operations require kernel privilege (priv_lvl = 0). Executing
+      INVTLB at user privilege triggers a
+      <a href="Interrupts.html#INTERRUPT_PROTECT_FAULT">PROTECT_FAULT</a>.
+    </p>
+  </body>
+</html>

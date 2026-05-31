@@ -30,8 +30,8 @@ enum StackVM_BC
   BC_STOR = 11,
   BC_CALL_E = 12,
   BC_RET_E = 13,
-  BC_SYSRET = 14,
-  BC_INT = 15,
+  BC_INT128 = 14, // Extended 128-bit / BITOP group (opcode 0x0E)
+  BC_INVTLB = 15, // TLB invalidation group (opcode 0x0F)
   BC_LSHIFT1 = 16,
   BC_LSHIFT2 = 17,
   BC_LSHIFT4 = 18,
@@ -40,14 +40,14 @@ enum StackVM_BC
   BC_RSHIFT2 = 21,
   BC_RSHIFT4 = 22,
   BC_RSHIFT8 = 23,
-  BC_LROT1 = 24,
-  BC_LROT2 = 25,
-  BC_LROT4 = 26,
-  BC_LROT8 = 27,
-  BC_RROT1 = 28,
-  BC_RROT2 = 29,
-  BC_RROT4 = 30,
-  BC_RROT8 = 31,
+  BC_CLZ1 = 24, // Count Leading Zeros (1-byte)
+  BC_CLZ2 = 25,
+  BC_CLZ4 = 26,
+  BC_CLZ8 = 27,
+  BC_CTZ1 = 28, // Count Trailing Zeros (1-byte)
+  BC_CTZ2 = 29,
+  BC_CTZ4 = 30,
+  BC_CTZ8 = 31,
   BC_AND1 = 32,
   BC_AND2 = 33,
   BC_AND4 = 34,
@@ -162,7 +162,21 @@ enum StackVM_BCR
   BCR_EA_R_IP = 0x0B,
   BCR_TOS = 0x0C,
   BCR_SYSREG = 0x0D,
-  BCR_SZ_1 = 0x0 << 5,
+  // LOAD-only atomic BCR codes (each followed by 1 ordering byte: 0=RELAXED,1=ACQUIRE,2=RELEASE,3=SEQ_CST)
+  BCR_ATOMIC_LOAD = 0x0E,
+  BCR_ATOMIC_XCHG = 0x0F,
+  BCR_ATOMIC_CAS = 0x10,
+  BCR_ATOMIC_FADD = 0x11,
+  BCR_ATOMIC_FSUB = 0x12,
+  BCR_ATOMIC_FAND = 0x13,
+  BCR_ATOMIC_FOR = 0x14,
+  BCR_ATOMIC_FXOR = 0x15,
+  // STOR-only BCR codes (same numeric space, different context)
+  BCR_ATOMIC_STORE = 0x08, // STOR: atomic store (== BCR_ABS_C numeric; used on STOR path)
+  BCR_FENCE_ALL = 0x0A,    // STOR: full memory fence (MFENCE)
+  BCR_FENCE_LOAD = 0x0B,   // STOR: load fence (LFENCE)
+  BCR_FENCE_STORE = 0x0C,  // STOR: store fence (SFENCE)
+  BCR_SZ_16 = 0x4 << 5,
   BCR_SZ_2 = 0x1 << 5,
   BCR_SZ_4 = 0x2 << 5,
   BCR_SZ_8 = 0x3 << 5,
@@ -227,6 +241,7 @@ enum StackVM_BCC
 enum StackVM_BCRE
 {
   BCRE_SYS = 0x1 << 7,
+  BCRE_IS_INT = 1 << 6, // IRET when IS_SYS=1
   BCRE_RST_SP_SZ1 = 0x0 << 5,
   BCRE_RST_SP_SZ2 = 0x1 << 5,
   BCRE_RST_SP_SZ4 = 0x2 << 5,
@@ -243,6 +258,7 @@ enum StackVM_BCCE
 {
   BCCE_SYSCALL = 1 << 7,
   BCCE_IS_REL = 1 << 6,
+  BCCE_IS_INT = 1 << 5, // software interrupt when IS_SYS=0: reads inline int_n byte
   BCCE_S_SYSN_SZ1 = 0 << 5,
   BCCE_S_SYSN_SZ2 = 1 << 5,
   BCCE_S_SYSN_SZ4 = 2 << 5,
@@ -268,15 +284,61 @@ enum StackVM_SVSR
   SVSR_USER_BP = 0x07,
   SVSRB_TLPTR = 0x08,
   SVSR_KERNEL_TLPTR = 0x08,
-  SVSR_USER_TLPTR = 0x09
+  SVSR_USER_TLPTR = 0x09,
+  SVSR_CORE_ID = 0x0A,        // R/kernel: hardware core identifier
+  SVSR_IPI = 0x0B,            // W/kernel: inter-processor interrupt
+  SVSR_CYCLE_COUNT = 0x0C,    // R/kernel: hardware cycle counter
+  SVSR_PAGE_FAULT_ADDR = 0x0D // R/kernel: virtual addr of last page fault
+};
+
+// INT128 sub-operation codes (byte following BC_INT128 opcode)
+enum StackVM_BC128
+{
+  BC128_ADD128U = 0x00,
+  BC128_ADD128S = 0x01,
+  BC128_SUB128U = 0x02,
+  BC128_SUB128S = 0x03,
+  BC128_MUL128U = 0x04,
+  BC128_MUL128S = 0x05,
+  BC128_DIV128U = 0x06,
+  BC128_DIV128S = 0x07,
+  BC128_MOD128U = 0x08,
+  BC128_MOD128S = 0x09,
+  BC128_AND128 = 0x0A,
+  BC128_OR128 = 0x0B,
+  BC128_XOR128 = 0x0C,
+  BC128_NOT128 = 0x0D,
+  BC128_LSHIFT128 = 0x0E,
+  BC128_RSHIFT128U = 0x0F,
+  BC128_RSHIFT128S = 0x10,
+  BC128_CMP128U = 0x11,
+  BC128_CMP128S = 0x12,
+  BC128_POPCNT1 = 0x13,
+  BC128_POPCNT2 = 0x14,
+  BC128_POPCNT4 = 0x15,
+  BC128_POPCNT8 = 0x16,
+  BC128_BSWAP2 = 0x17,
+  BC128_BSWAP4 = 0x18,
+  BC128_BSWAP8 = 0x19
 };
 
 enum StackVM_INT
 {
-  INT_INVAL_OPCODE = 6,
-  INT_HARDWARE_IO = 7,
-  INT_PROTECT_FAULT = 13,
-  INT_PAGE_FAULT = 14
+  INT_DIV_BY_ZERO = 0x00,
+  INT_DEBUG = 0x01,
+  INT_NMI = 0x02,
+  INT_BREAKPOINT = 0x03,
+  INT_OVERFLOW = 0x04,
+  INT_BOUNDS_CHECK = 0x05,
+  INT_INVAL_OPCODE = 0x06,
+  INT_FPU_FAULT = 0x07,
+  INT_DOUBLE_FAULT = 0x08,
+  INT_PROTECT_FAULT = 0x0D,
+  INT_PAGE_FAULT = 0x0E,
+  INT_INVAL_SYSCALL = 0x0F,
+  INT_HW_IO = 0x10,
+  INT_TIMER = 0x11,
+  INT_TLB_SHOOTDOWN = 0x1F
 };
 
 enum StackVM_MRQ
@@ -540,15 +602,21 @@ constexpr bool is_host_little_endian = false;
 constexpr bool watch_memory = false;
 
 const uint8_t SVSR_REGISTER_PERMS[] = {
-    // <- MSB [write user] [write kernel] [read user] [read kernel]
-    0b1111, // FLAGS
-    0b0101, // ISR
-    0b0001, // SDP
-    0b0101, // KERNEL_SYS_FN
-    0b0101, // KERNEL_SP
-    0b1111, // USER_SP
-    0b0101, // KERNEL_TLPTR
-    0b0101, // USER_TLPTR
+    // bits: [write user][write kernel][read user][read kernel]
+    0b1111, // 0x00 FLAGS
+    0b0101, // 0x01 ISR
+    0b0001, // 0x02 SDP
+    0b0101, // 0x03 KERNEL_SYS_FN
+    0b0101, // 0x04 KERNEL_SP
+    0b1111, // 0x05 USER_SP
+    0b0101, // 0x06 KERNEL_BP
+    0b1111, // 0x07 USER_BP
+    0b0101, // 0x08 KERNEL_TLPTR
+    0b0101, // 0x09 USER_TLPTR
+    0b0001, // 0x0A CORE_ID (R/kernel only)
+    0b0100, // 0x0B IPI (W/kernel only)
+    0b0001, // 0x0C CYCLE_COUNT (R/kernel only)
+    0b0001, // 0x0D PAGE_FAULT_ADDR (R/kernel only)
 };
 
 const uint64_t SVSR_FLAGS_ILLEGAL_BITS_WRITE_MASK[] = {
@@ -568,7 +636,7 @@ protected:
   bool vaddr_msb_eq_priv;
   uint8_t virt_mem_mode;
   uint64_t virt_error_data[4]; // virt_error_data[0] & 0xFF is the virt_error_code
-  uint64_t sys_regs[10];
+  uint64_t sys_regs[14];
   BaseStackVM_Env *env;
   uint64_t ax;
   typedef void (*VirtSyscall)(uint64_t syscall_n, StackVM_TrapException::SimpleStruct *err);
@@ -1364,74 +1432,54 @@ protected:
   {
     set_from(sp -= size, buf, size);
   }
-  void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_bp, uint64_t prev_sp, uint64_t prev_flags, uint64_t arg0 = 0, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0)
+  void trap(uint8_t int_n, uint64_t prev_ip, uint64_t prev_bp, uint64_t prev_sp, uint64_t prev_flags, uint64_t error_code = 0)
   {
     uint64_t isr_table_ptr = sys_regs[SVSR_ISR];
     if (isr_table_ptr == 0)
     {
       running = false;
-      printf("NO ISR TABLE provided. dumping error report\n  int_n = ");
-      if (int_n == INT_INVAL_OPCODE)
-      {
-        printf("INT_INVAL_OPCODE");
-      }
-      else if (int_n == INT_PAGE_FAULT)
-      {
-        printf("INT_PAGE_FAULT");
-      }
-      else if (int_n == INT_PROTECT_FAULT)
-      {
-        printf("INT_PROTECT_FAULT");
-      }
-      else if (int_n == INT_HARDWARE_IO)
-      {
-        printf("INT_HARDWARE_IO");
-      }
-      else
-      {
-        printf("INT_UNKNOWN (0x%02X)", int_n);
-      }
+      printf("NO ISR TABLE provided. dumping error report\n  int_n = 0x%02X", int_n);
       printf("\n  prev_ip = 0x%016llX\n  prev_bp = 0x%016llX\n  prev_sp = 0x%016llX\n  prev_flags = 0x%016llX", prev_ip, prev_bp, prev_sp, prev_flags);
-      printf("\n  arg0 = 0x%016llX\n  arg1 = 0x%016llX\n  arg2 = 0x%016llX\n  arg3 = 0x%016llX\n", arg0, arg1, arg2, arg3);
+      printf("\n  error_code = 0x%016llX\n", error_code);
       return;
     }
 
-    uint64_t flags_addr[2]; // { flags, addr }
+    // Read 16-byte ISR entry: [8B isr_flags][8B handler_addr]
+    uint64_t isr_entry[2] = {0, 0};
     {
-      // Temporarily switch to kernel privilege to read the ISR table
       uint8_t saved_priv = priv_lvl;
       priv_lvl = PRIV_KERNEL;
       calc_flags();
       MemoryView mv = get_memory_view(isr_table_ptr + int_n * 16, 16, MRQ_READ);
-      mv.readatinto(0, (uint8_t *)flags_addr, 16);
+      mv.readatinto(0, (uint8_t *)isr_entry, 16);
       priv_lvl = saved_priv;
       calc_flags();
     }
+    uint64_t isr_flags = isr_entry[0];
+    uint64_t handler_addr = isr_entry[1];
+    uint8_t isr_priv = (isr_flags >> 8) & 1; // privilege for this handler
 
-    // Privilege is always forced to KERNEL (0) for interrupt handlers
-    uint64_t isr_flags = flags_addr[0] & ~SVSR_FLAGS_PRIV_MASK;
-    uint8_t isr_priv = PRIV_KERNEL;
-
-    // Save caller's sp, then switch to the ISR's stack
+    // Save caller's sp, switch to ISR privilege's stack
     sys_regs[SVSRB_SP + priv_lvl] = prev_sp;
     sp = sys_regs[SVSRB_SP + isr_priv];
 
-    // Apply ISR flags (sets priv_lvl, virt_mem_mode, etc.)
+    // Push v3 interrupt frame (TOS = lowest address = int_n):
+    //   [bp+0] int_n  [bp+8] error_code  [bp+16] saved_flags
+    //   [bp+24] user_bp  [bp+32] user_sp  [bp+40] user_ip
+    push((uint64_t)prev_ip);    // user_ip  at [bp+40]
+    push((uint64_t)prev_sp);    // user_sp  at [bp+32]
+    push((uint64_t)prev_bp);    // user_bp  at [bp+24]
+    push((uint64_t)prev_flags); // saved_flags at [bp+16]
+    push((uint64_t)error_code); // error_code at [bp+8]
+    push((uint64_t)int_n);      // int_num  at [bp+0]  <- TOS
+    bp = sp;
+
+    // Apply ISR flags: sets privilege level, priority, virt_mem_mode
     sys_regs[SVSR_FLAGS] = isr_flags;
     calc_from_flags();
 
-    // Push interrupt frame: [arg3][arg2][arg1][arg0][prev_flags][prev_bp][prev_ip] <- TOS
-    push(arg3);
-    push(arg2);
-    push(arg1);
-    push(arg0);
-    push(prev_flags);
-    push(prev_bp);
-    push(prev_ip);
-    bp = sp;
-
     // Jump to ISR handler
-    ip = flags_addr[1];
+    ip = handler_addr;
   }
 
   inline void calc_from_flags()
@@ -2169,11 +2217,11 @@ protected:
     case BC_LOAD:
     {
       const size_t size = 1 << (extra >> 5);
-      if (size >= 16)
+      if (size > 16)
       {
         throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
       }
-      uint8_t buf[8];
+      uint8_t buf[16];
       uint64_t addr;
       switch (extra & 0x1F)
       {
@@ -2267,7 +2315,7 @@ protected:
       case BCR_SYSREG:
       {
         uint8_t which = get_instr_uint8();
-        if (which >= 8 || ((SVSR_REGISTER_PERMS[which] & (1 << priv_lvl)) == 0))
+        if (which >= 14 || ((SVSR_REGISTER_PERMS[which] & (1 << priv_lvl)) == 0))
         {
           throw StackVM_TrapException(INT_PROTECT_FAULT);
         }
@@ -2278,6 +2326,24 @@ protected:
         push(sys_regs[which]);
       }
       break;
+      // Atomic LOAD BCR codes (single-core: behave as regular loads)
+      case BCR_ATOMIC_LOAD:
+      case BCR_ATOMIC_XCHG:
+      case BCR_ATOMIC_CAS:
+      case BCR_ATOMIC_FADD:
+      case BCR_ATOMIC_FSUB:
+      case BCR_ATOMIC_FAND:
+      case BCR_ATOMIC_FOR:
+      case BCR_ATOMIC_FXOR:
+      {
+        // Consume ordering byte (ignored on single-core)
+        get_instr_uint8();
+        // For simplicity on single-core, treat as regular LOAD ABS_S8
+        addr = pop_uint64();
+        get_into(addr, buf, size);
+        push_from(buf, size);
+      }
+      break;
       default:
         throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
       }
@@ -2286,11 +2352,11 @@ protected:
     case BC_STOR:
     {
       const size_t size = 1 << (extra >> 5);
-      if (size >= 16)
+      if (size > 16)
       {
         throw StackVM_TrapException(INT_INVAL_OPCODE, true);
       }
-      uint8_t buf[8];
+      uint8_t buf[16];
       uint64_t addr;
       switch (extra & 0x1F)
       {
@@ -2340,7 +2406,7 @@ protected:
       case BCR_SYSREG:
       {
         uint8_t which = get_instr_uint8();
-        if (which >= 8 || ((SVSR_REGISTER_PERMS[which] & (4 << priv_lvl)) == 0))
+        if (which >= 14 || ((SVSR_REGISTER_PERMS[which] & (4 << priv_lvl)) == 0))
         {
           throw StackVM_TrapException(INT_PROTECT_FAULT, true);
         }
@@ -2370,122 +2436,169 @@ protected:
         }
       }
       break;
+      // 0x08: ATOMIC_STORE (consume ordering byte; single-core behaves as normal store)
+      case 0x08:
+      {
+        get_instr_uint8(); // ordering byte, ignored on single-core
+        addr = pop_uint64();
+        pop_into(buf, size);
+        set_from(addr, buf, size);
+      }
+      break;
+      // 0x0A/0x0B/0x0C: memory fences (no-op on single-core emulator)
+      case 0x0A: // FENCE_ALL
+      case 0x0B: // FENCE_LOAD
+      case 0x0C: // FENCE_STORE
+        break;
       default:
         throw StackVM_TrapException(INT_INVAL_OPCODE, true);
       }
     }
     break;
-    case BC_CALL_E:
-    {
-      if ((extra & BCCE_SYSCALL) > 0)
       {
-        // syscall
-        uint64_t sys_n = 0;
-        const uint64_t prev_user_sp = sys_regs[SVSR_USER_SP];
-        const uint64_t prev_kernel_sp = sys_regs[SVSR_KERNEL_SP];
-        switch (extra & BCCE_S_SYSN_SZ8)
+        if ((extra & BCCE_SYSCALL) > 0)
         {
-        case BCCE_S_SYSN_SZ1:
-          sys_n = pop_uint8();
-          break;
-        case BCCE_S_SYSN_SZ2:
-          sys_n = pop_uint16();
-          break;
-        case BCCE_S_SYSN_SZ4:
-          sys_n = pop_uint32();
-          break;
-        case BCCE_S_SYSN_SZ8:
-          sys_n = pop_uint64();
-          break;
-        }
-        uint8_t num = pop_uint8();
-        size_t size = ((size_t)num + 1) * 8;
-        MemoryView user_mv = get_memory_view(sp, size, MRQ_READ);
-        sp += size;
-        if (virt_syscall)
-        {
-          // Virtualized syscall mode: dispatch to host-provided handler, no kernel frame setup
-          StackVM_TrapException::SimpleStruct err;
-          virt_syscall(sys_n, &err);
-        }
-        else
-        {
-          // Full emulation mode: set up kernel frame and jump to SVSR_SYS_FN
-          switch_to_priv_simple(0);
-          try
+          // syscall
+          uint64_t sys_n = 0;
+          const uint64_t prev_user_sp = sys_regs[SVSR_USER_SP];
+          const uint64_t prev_kernel_sp = sys_regs[SVSR_KERNEL_SP];
+          switch (extra & BCCE_S_SYSN_SZ8)
           {
-            MemoryView kernel_mv = get_memory_view(sp - (size + 25), size + 25, MRQ_WRITE);
-            for (size_t i = 0; i < size; ++i)
+          case BCCE_S_SYSN_SZ1:
+            sys_n = pop_uint8();
+            break;
+          case BCCE_S_SYSN_SZ2:
+            sys_n = pop_uint16();
+            break;
+          case BCCE_S_SYSN_SZ4:
+            sys_n = pop_uint32();
+            break;
+          case BCCE_S_SYSN_SZ8:
+            sys_n = pop_uint64();
+            break;
+          }
+          uint8_t num = pop_uint8();
+          size_t size = ((size_t)num + 1) * 8;
+          MemoryView user_mv = get_memory_view(sp, size, MRQ_READ);
+          sp += size;
+          if (virt_syscall)
+          {
+            // Virtualized syscall mode: dispatch to host-provided handler, no kernel frame setup
+            StackVM_TrapException::SimpleStruct err;
+            virt_syscall(sys_n, &err);
+          }
+          else
+          {
+            // Full emulation mode: set up kernel frame and jump to SVSR_SYS_FN
+            switch_to_priv_simple(0);
+            try
             {
-              kernel_mv[i + 25] = user_mv[i];
+              MemoryView kernel_mv = get_memory_view(sp - (size + 25), size + 25, MRQ_WRITE);
+              for (size_t i = 0; i < size; ++i)
+              {
+                kernel_mv[i + 25] = user_mv[i];
+              }
+              sp -= 25 + size;
+              kernel_mv.write(ip, 0);
+              kernel_mv.write(bp, 8);
+              kernel_mv.write(sys_n, 16);
+              kernel_mv[24] = num;
+              bp = sp;
+              ip = sys_regs[SVSR_SYS_FN];
             }
-            sp -= 25 + size;
-            kernel_mv.write(ip, 0);
-            kernel_mv.write(bp, 8);
-            kernel_mv.write(sys_n, 16);
-            kernel_mv[24] = num;
-            bp = sp;
-            ip = sys_regs[SVSR_SYS_FN];
+            catch (...)
+            {
+              sys_regs[SVSR_USER_SP] = prev_user_sp;
+              sys_regs[SVSR_KERNEL_SP] = prev_kernel_sp;
+              throw;
+            }
           }
-          catch (...)
-          {
-            sys_regs[SVSR_USER_SP] = prev_user_sp;
-            sys_regs[SVSR_KERNEL_SP] = prev_kernel_sp;
-            throw;
-          }
-        }
-      }
-      else
-      {
-        // Non-syscall extended call: BCCE_IS_REL (bit 6) selects relative vs absolute
-        uint64_t addr = pop_uint64();
-        if (extra & BCCE_IS_REL)
-        {
-          call(ip + (int64_t)addr);
         }
         else
         {
-          call(addr);
+          // Non-syscall extended call
+          if (extra & BCCE_IS_INT)
+          {
+            // Software interrupt: read inline int_n byte, build v3 interrupt frame
+            uint8_t int_n = get_instr_uint8();
+            uint64_t prev_ip_ = ip, prev_sp_ = sp, prev_bp_ = bp;
+            uint64_t prev_flags = sys_regs[SVSR_FLAGS];
+            trap(int_n, prev_ip_, prev_bp_, prev_sp_, prev_flags);
+          }
+          else
+          {
+            // Normal extended call: BCCE_IS_REL selects relative vs absolute
+            uint64_t addr = pop_uint64();
+            if (extra & BCCE_IS_REL)
+            {
+              call(ip + (int64_t)addr);
+            }
+            else
+            {
+              call(addr);
+            }
+          }
         }
       }
-    }
-    break;
+      break;
     case BC_RET_E:
     {
       if ((extra & BCRE_SYS) > 0)
       {
-        // Syscall return: copy return data from kernel stack back to user stack
-        uint64_t sz_copy = pop_uint64();
-        if (sz_copy > 2048)
-          sz_copy = 2048;
-        // Read return data while still in kernel privilege
-        uint8_t ret_buf[2048];
-        if (sz_copy > 0)
+        if (extra & BCRE_IS_INT)
         {
-          get_into(sp, ret_buf, sz_copy);
+          // IRET: unwind v3 interrupt frame
+          // Frame layout from bp: [+0]=int_num, [+8]=error_code, [+16]=saved_flags,
+          //                       [+24]=user_bp, [+32]=user_sp, [+40]=user_ip
+          sp = bp;
+          /* uint64_t int_num    = */ pop_uint64();
+          /* uint64_t error_code = */ pop_uint64();
+          uint64_t saved_flags = pop_uint64();
+          uint64_t user_bp_ = pop_uint64();
+          uint64_t user_sp_ = pop_uint64();
+          uint64_t user_ip_ = pop_uint64();
+          sys_regs[SVSR_KERNEL_SP] = sp; // save kernel sp for next trap entry
+          ip = user_ip_;
+          bp = user_bp_;
+          sys_regs[SVSR_FLAGS] = saved_flags;
+          calc_from_flags();
+          sp = user_sp_;
         }
-        // Restore kernel frame (sp = bp, then pop fields)
-        sp = bp;
-        uint64_t prev_ip = pop_uint64();
-        uint64_t prev_bp = pop_uint64();
-        pop_uint64(); // stored sys_n (skip)
-        uint8_t num = get_uint8(sp);
-        sp += 1;
-        sp += ((size_t)num + 1) * 8; // skip args copied from user stack
-        sys_regs[SVSR_KERNEL_SP] = sp;
-        // Switch back to user privilege
-        uint64_t new_flags = sys_regs[SVSR_FLAGS] | SVSR_FLAGS_PRIV_MASK;
-        sys_regs[SVSR_FLAGS] = new_flags;
-        calc_from_flags();
-        // Copy return data onto user stack
-        sp = sys_regs[SVSR_USER_SP];
-        sp -= sz_copy;
-        if (sz_copy > 0)
+        else
         {
-          set_from(sp, ret_buf, sz_copy);
-        }
-        bp = prev_bp;
-        ip = prev_ip;
+          // Syscall return: copy return data from kernel stack back to user stack
+          uint64_t sz_copy = pop_uint64();
+          if (sz_copy > 2048)
+            sz_copy = 2048;
+          // Read return data while still in kernel privilege
+          uint8_t ret_buf[2048];
+          if (sz_copy > 0)
+          {
+            get_into(sp, ret_buf, sz_copy);
+          }
+          // Restore kernel frame (sp = bp, then pop fields)
+          sp = bp;
+          uint64_t prev_ip = pop_uint64();
+          uint64_t prev_bp = pop_uint64();
+          pop_uint64(); // stored sys_n (skip)
+          uint8_t num = get_uint8(sp);
+          sp += 1;
+          sp += ((size_t)num + 1) * 8; // skip args copied from user stack
+          sys_regs[SVSR_KERNEL_SP] = sp;
+          // Switch back to user privilege
+          uint64_t new_flags = sys_regs[SVSR_FLAGS] | SVSR_FLAGS_PRIV_MASK;
+          sys_regs[SVSR_FLAGS] = new_flags;
+          calc_from_flags();
+          // Copy return data onto user stack
+          sp = sys_regs[SVSR_USER_SP];
+          sp -= sz_copy;
+          if (sz_copy > 0)
+          {
+            set_from(sp, ret_buf, sz_copy);
+          }
+          bp = prev_bp;
+          ip = prev_ip;
+        } // end else (SYSRET)
       }
       else
       {
@@ -2539,15 +2652,258 @@ protected:
       }
     }
     break;
-    case BC_SYSRET:
-      throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
-    case BC_INT:
+    case BC_INT128:
     {
-      const uint64_t arg0 = pop_uint64();
-      const uint64_t arg1 = pop_uint64();
-      const uint64_t arg2 = pop_uint64();
-      const uint64_t arg3 = pop_uint64();
-      trap(extra, ip, bp, sp, sys_regs[SVSR_FLAGS], arg0, arg1, arg2, arg3);
+      // extra = sub-operation code (BC128_*)
+      switch (extra)
+      {
+      case BC128_ADD128U:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a + b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_ADD128S:
+      {
+        __int128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __int128_t r = a + b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_SUB128U:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a - b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_SUB128S:
+      {
+        __int128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __int128_t r = a - b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_MUL128U:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a * b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_MUL128S:
+      {
+        __int128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __int128_t r = a * b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_DIV128U:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        if (!b)
+          throw StackVM_TrapException(INT_DIV_BY_ZERO);
+        __uint128_t r = a / b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_DIV128S:
+      {
+        __int128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        if (!b)
+          throw StackVM_TrapException(INT_DIV_BY_ZERO);
+        __int128_t r = a / b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_MOD128U:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        if (!b)
+          throw StackVM_TrapException(INT_DIV_BY_ZERO);
+        __uint128_t r = a % b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_MOD128S:
+      {
+        __int128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        if (!b)
+          throw StackVM_TrapException(INT_DIV_BY_ZERO);
+        __int128_t r = a % b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_AND128:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a & b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_OR128:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a | b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_XOR128:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a ^ b;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_NOT128:
+      {
+        __uint128_t a;
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = ~a;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_LSHIFT128:
+      {
+        uint8_t sh = pop_uint8();
+        __uint128_t a;
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a << sh;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_RSHIFT128U:
+      {
+        uint8_t sh = pop_uint8();
+        __uint128_t a;
+        pop_into((uint8_t *)&a, 16);
+        __uint128_t r = a >> sh;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_RSHIFT128S:
+      {
+        uint8_t sh = pop_uint8();
+        __int128_t a;
+        pop_into((uint8_t *)&a, 16);
+        __int128_t r = a >> sh;
+        push_from((uint8_t *)&r, 16);
+      }
+      break;
+      case BC128_CMP128U:
+      {
+        __uint128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        push((int64_t)(a < b ? -1 : a > b ? 1
+                                          : 0));
+      }
+      break;
+      case BC128_CMP128S:
+      {
+        __int128_t b, a;
+        pop_into((uint8_t *)&b, 16);
+        pop_into((uint8_t *)&a, 16);
+        push((int64_t)(a < b ? -1 : a > b ? 1
+                                          : 0));
+      }
+      break;
+      case BC128_POPCNT1:
+      {
+        uint8_t a = pop_uint8();
+        push((uint8_t)__builtin_popcount(a));
+      }
+      break;
+      case BC128_POPCNT2:
+      {
+        uint16_t a = pop_uint16();
+        push((uint8_t)__builtin_popcount(a));
+      }
+      break;
+      case BC128_POPCNT4:
+      {
+        uint32_t a = pop_uint32();
+        push((uint8_t)__builtin_popcount(a));
+      }
+      break;
+      case BC128_POPCNT8:
+      {
+        uint64_t a = pop_uint64();
+        push((uint8_t)__builtin_popcountll(a));
+      }
+      break;
+      case BC128_BSWAP2:
+      {
+        uint16_t a = pop_uint16();
+        push(__builtin_bswap16(a));
+      }
+      break;
+      case BC128_BSWAP4:
+      {
+        uint32_t a = pop_uint32();
+        push(__builtin_bswap32(a));
+      }
+      break;
+      case BC128_BSWAP8:
+      {
+        uint64_t a = pop_uint64();
+        push(__builtin_bswap64(a));
+      }
+      break;
+      default:
+        throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
+      }
+    }
+    break;
+    case BC_INVTLB:
+    {
+      if (priv_lvl != PRIV_KERNEL)
+        throw StackVM_TrapException(INT_PROTECT_FAULT);
+      if (extra == 0x00)
+      {
+        // INVTLB_BEGIN: pop tlptr, vaddr_base, vaddr_size
+        uint64_t vaddr_size = pop_uint64();
+        uint64_t vaddr_base = pop_uint64();
+        uint64_t tlptr_val = pop_uint64();
+        (void)tlptr_val;
+        (void)vaddr_base;
+        (void)vaddr_size; // single-core: no-op
+      }
+      else if (extra == 0x01)
+      {
+        // INVTLB_COMMIT: no-op on single-core
+      }
+      else
+      {
+        throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
+      }
     }
     break;
     case BC_LSHIFT1:
@@ -2606,68 +2962,52 @@ protected:
       push((uint64_t)(a >> b));
     }
     break;
-    case BC_LROT1:
+    case BC_CLZ1:
     {
-      uint8_t b = pop_uint8();
       uint8_t a = pop_uint8();
-      b %= 8;
-      push((uint8_t)((a << b) | (a >> (8 - b))));
+      push(a ? (uint8_t)(__builtin_clz((uint32_t)a) - 24) : (uint8_t)8);
     }
     break;
-    case BC_LROT2:
+    case BC_CLZ2:
     {
-      uint8_t b = pop_uint8();
       uint16_t a = pop_uint16();
-      b %= 16;
-      push((uint16_t)((a << b) | (a >> (16 - b))));
+      push(a ? (uint8_t)(__builtin_clz((uint32_t)a) - 16) : (uint8_t)16);
     }
     break;
-    case BC_LROT4:
+    case BC_CLZ4:
     {
-      uint8_t b = pop_uint8();
       uint32_t a = pop_uint32();
-      b %= 32;
-      push((uint32_t)((a << b) | (a >> (32 - b))));
+      push(a ? (uint8_t)__builtin_clz(a) : (uint8_t)32);
     }
     break;
-    case BC_LROT8:
+    case BC_CLZ8:
     {
-      uint8_t b = pop_uint8();
       uint64_t a = pop_uint64();
-      b %= 64;
-      push((uint64_t)((a << b) | (a >> (64 - b))));
+      push(a ? (uint8_t)__builtin_clzll(a) : (uint8_t)64);
     }
     break;
-    case BC_RROT1:
+    case BC_CTZ1:
     {
-      uint8_t b = pop_uint8();
       uint8_t a = pop_uint8();
-      b %= 8;
-      push((uint8_t)((a >> b) | (a << (8 - b))));
+      push(a ? (uint8_t)__builtin_ctz((uint32_t)a) : (uint8_t)8);
     }
     break;
-    case BC_RROT2:
+    case BC_CTZ2:
     {
-      uint8_t b = pop_uint8();
       uint16_t a = pop_uint16();
-      b %= 16;
-      push((uint16_t)((a >> b) | (a << (16 - b))));
+      push(a ? (uint8_t)__builtin_ctz((uint32_t)a) : (uint8_t)16);
     }
     break;
-    case BC_RROT4:
+    case BC_CTZ4:
     {
-      uint8_t b = pop_uint8();
       uint32_t a = pop_uint32();
-      b %= 32;
-      push((uint32_t)((a >> b) | (a << (32 - b))));
+      push(a ? (uint8_t)__builtin_ctz(a) : (uint8_t)32);
     }
     break;
-    case BC_RROT8:
+    case BC_CTZ8:
     {
-      uint8_t b = pop_uint8();
       uint64_t a = pop_uint64();
-      b %= 64;
-      push((uint64_t)((a >> b) | (a << (64 - b))));
+      push(a ? (uint8_t)__builtin_ctzll(a) : (uint8_t)64);
     }
     break;
     case BC_AND1:
@@ -3340,22 +3680,9 @@ protected:
       ret();
       break;
     case BC_RET_N2:
-    {
-      // IRET: restore cpu state from interrupt frame at bp
-      // Frame layout from TOS: [prev_ip][prev_bp][prev_flags][arg0][arg1][arg2][arg3]
-      sp = bp;
-      uint64_t prev_ip = pop_uint64();
-      uint64_t prev_bp = pop_uint64();
-      uint64_t prev_flags = pop_uint64();
-      sp += 32; // skip arg0, arg1, arg2, arg3
-      // Save current (kernel) sp after frame cleanup
-      sys_regs[SVSR_KERNEL_SP] = sp;
-      ip = prev_ip;
-      bp = prev_bp;
-      // Restore flags; switches sp back to original privilege level's stack if priv changed
-      set_flags_switch_to_priv(prev_flags);
-    }
-    break;
+      // 0x7F is the invalid opcode trap in v3 ISA
+      throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
+      break;
     }
   }
 
@@ -3379,7 +3706,7 @@ public:
         sp = prev_sp;
         sys_regs[SVSR_FLAGS] = prev_flags;
         calc_from_flags();
-        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
+        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0);
       }
     }
   }
@@ -3412,7 +3739,11 @@ extern "C"
     size_t pub_memsize() { return memsize; }
     uint64_t pub_sysreg(uint8_t n) { return sys_regs[n]; }
     void pub_set_sysreg(uint8_t n, uint64_t v) { sys_regs[n] = v; }
-    void pub_set_flags(uint64_t flags) { sys_regs[SVSR_FLAGS] = flags; calc_from_flags(); }
+    void pub_set_flags(uint64_t flags)
+    {
+      sys_regs[SVSR_FLAGS] = flags;
+      calc_from_flags();
+    }
     void pub_set_virt_syscall(VirtSyscall fn) { virt_syscall = fn; }
 
     void pub_step()
@@ -3432,7 +3763,7 @@ extern "C"
         sp = prev_sp;
         sys_regs[SVSR_FLAGS] = prev_flags;
         calc_from_flags();
-        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0, exc.arg1, exc.arg2, exc.arg3);
+        trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0);
       }
     }
   };

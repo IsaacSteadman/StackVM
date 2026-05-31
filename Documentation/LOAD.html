@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Documentation | LOAD</title>
@@ -158,33 +158,73 @@
           </td>
         </tr>
         <tr>
-          <td rowspan="18">RESERVED</td>
+          <td>ATOMIC_LOAD</td>
           <td>0b01110 (0x0E)</td>
-          <td rowspan="18">reserved for future use</td>
+          <td>
+            Atomically load a value from an address. Consumes one ordering byte
+            after BCR. Stack: [8B addr] -&gt; [sz val]
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_XCHG</td>
           <td>0b01111 (0x0F)</td>
+          <td>
+            Atomically exchange: pops [sz new] then [8B addr]; pushes [sz old].
+            Consumes ordering byte.
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_CAS</td>
           <td>0b10000 (0x10)</td>
+          <td>
+            Compare-and-swap: pops [sz desired][sz expected][8B addr]; pushes
+            [sz old]. Consumes ordering byte.
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_FADD</td>
           <td>0b10001 (0x11)</td>
+          <td>
+            Fetch-and-add: pops [sz addend][8B addr]; pushes [sz old]. Consumes
+            ordering byte.
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_FSUB</td>
           <td>0b10010 (0x12)</td>
+          <td>
+            Fetch-and-subtract: pops [sz subtrahend][8B addr]; pushes [sz old].
+            Consumes ordering byte.
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_FAND</td>
           <td>0b10011 (0x13)</td>
+          <td>
+            Fetch-and-AND: pops [sz mask][8B addr]; pushes [sz old]. Consumes
+            ordering byte.
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_FOR</td>
           <td>0b10100 (0x14)</td>
+          <td>
+            Fetch-and-OR: pops [sz mask][8B addr]; pushes [sz old]. Consumes
+            ordering byte.
+          </td>
         </tr>
         <tr>
+          <td>ATOMIC_FXOR</td>
           <td>0b10101 (0x15)</td>
+          <td>
+            Fetch-and-XOR: pops [sz mask][8B addr]; pushes [sz old]. Consumes
+            ordering byte.
+          </td>
         </tr>
         <tr>
+          <td rowspan="10">RESERVED</td>
           <td>0b10110 (0x16)</td>
+          <td rowspan="10">reserved for future use</td>
         </tr>
         <tr>
           <td>0b10111 (0x17)</td>
@@ -258,6 +298,45 @@
         <tr class="nsm">
           <td>128 bytes</td>
           <td>0b111 (0x7)</td>
+        </tr>
+      </tbody>
+    </table>
+    <h3>Memory Ordering Byte (Atomic Variants)</h3>
+    <p>
+      All atomic LOAD variants (0x0E–0x15) consume one additional byte
+      immediately after the BCR byte. This byte specifies the memory ordering
+      guarantee:
+    </p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Value</th>
+          <th>Name</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0</td>
+          <td>RELAXED</td>
+          <td>No ordering guarantee beyond atomicity.</td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>ACQUIRE</td>
+          <td>
+            No subsequent load/store may be reordered before this operation.
+          </td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>RELEASE</td>
+          <td>No prior load/store may be reordered after this operation.</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>SEQ_CST</td>
+          <td>Full sequential consistency.</td>
         </tr>
       </tbody>
     </table>

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Documentation | Interrupts</title>
@@ -21,49 +21,148 @@
       </thead>
       <tbody>
         <tr>
+          <td>0x00</td>
+          <td>DIV_BY_ZERO</td>
+          <td>Division or modulo by zero</td>
+          <td>Offending instruction address</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x01</td>
+          <td>DEBUG</td>
+          <td>Single-step / debug trap</td>
+          <td>Instruction address</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x02</td>
+          <td>NMI</td>
+          <td>Non-Maskable Interrupt (hardware)</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x03</td>
+          <td>BREAKPOINT</td>
+          <td>Software breakpoint (INT 0x03 / debug trap)</td>
+          <td>Instruction address</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x04</td>
+          <td>OVERFLOW</td>
+          <td>Signed integer overflow detected</td>
+          <td>Offending instruction address</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x05</td>
+          <td>BOUNDS_CHECK</td>
+          <td>Array/bounds check failure</td>
+          <td>Offending instruction address</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
           <td>0x06</td>
           <td>INVAL_OPCODE</td>
-          <td>The Processor encountered an invalid opcode</td>
+          <td>The processor encountered an invalid opcode</td>
           <td>Offending opcode</td>
-          <td>Offending opcode location</td>
+          <td>Offending opcode address</td>
           <td></td>
           <td></td>
         </tr>
         <tr>
           <td>0x07</td>
-          <td>INT_HARDWARE_IO</td>
-          <td>Asynchronous Hardware IO</td>
-          <td>
-            Pointer to interrupt data (struct UnknownInterruptInfo *ptr) should
-            be the same as
-          </td>
+          <td>FPU_FAULT</td>
+          <td>Floating-point unit error (NaN, Inf, denormal, etc.)</td>
+          <td>FPU status word</td>
+          <td>Instruction address</td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x08</td>
+          <td>DOUBLE_FAULT</td>
+          <td>Exception occurred while handling another exception</td>
+          <td>Original exception number</td>
           <td></td>
           <td></td>
           <td></td>
         </tr>
         <tr>
-          <td>0x0d</td>
+          <td>0x0D</td>
           <td>PROTECT_FAULT</td>
-          <td>Page has insufficient permissions</td>
-          <td>page table pointer or 0 for Top level</td>
-          <td>index into page table that was searched</td>
           <td>
-            lower 3 bits contain the page table level: 0 for top level 4 for the
-            final permission entry
+            Page has insufficient permissions or privileged instruction at user
+            level
           </td>
-          <td>virtual address</td>
+          <td>Page table pointer or 0 for top level</td>
+          <td>Index into page table that was searched</td>
+          <td>
+            Lower 3 bits contain the page table level: 0 for top level, 4 for
+            the final permission entry
+          </td>
+          <td>Virtual address</td>
         </tr>
         <tr>
-          <td>0x0e</td>
+          <td>0x0E</td>
           <td>PAGE_FAULT</td>
           <td>Page not present in the page tables</td>
-          <td>page table pointer or 0 for Top level</td>
-          <td>index into page table that was searched</td>
+          <td>Page table pointer or 0 for top level</td>
+          <td>Index into page table that was searched</td>
           <td>
-            lower 3 bits contain the page table level: 0 for top level 4 for the
-            final permission entry
+            Lower 3 bits contain the page table level: 0 for top level, 4 for
+            the final permission entry
           </td>
-          <td>virtual address</td>
+          <td>Virtual address</td>
+        </tr>
+        <tr>
+          <td>0x0F</td>
+          <td>INVAL_SYSCALL</td>
+          <td>Invalid or unrecognised system call number</td>
+          <td>Syscall number</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x10</td>
+          <td>HW_IO</td>
+          <td>Asynchronous hardware I/O interrupt</td>
+          <td>Pointer to interrupt data (struct UnknownInterruptInfo *)</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x11</td>
+          <td>TIMER</td>
+          <td>Periodic hardware timer interrupt</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>0x1F</td>
+          <td>TLB_SHOOTDOWN</td>
+          <td>TLB shootdown IPI — another core requests TLB invalidation</td>
+          <td>TLB pointer</td>
+          <td>Virtual address base</td>
+          <td>Region size</td>
+          <td></td>
         </tr>
       </tbody>
     </table>

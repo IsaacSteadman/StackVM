@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Documentation | RET_E</title>
@@ -54,12 +54,34 @@
           <td colspan="2">SzCls RES Size</td>
           <td colspan="3">TBD (All 0)</td>
         </tr>
-        <tr class="inf">
+        <tr>
           <td>IS_SYS=1</td>
-          <td colspan="7">TBD (All 0)</td>
+          <td>IS_INT</td>
+          <td colspan="6">TBD (All 0)</td>
         </tr>
       </tbody>
     </table>
+    <p>
+      IS_SYS=1, IS_INT=0 performs a SYSRET: returns from a kernel syscall to
+      user mode, restoring user stack pointer and base pointer from the
+      SVSR_USER_SP / SVSR_USER_BP system registers.
+    </p>
+    <p>
+      IS_SYS=1, IS_INT=1 performs an IRET: returns from an interrupt handler.
+      The 48-byte interrupt frame is consumed from the kernel stack:
+    </p>
+    <ul>
+      <li>[bp+0] int_num (8 bytes)</li>
+      <li>[bp+8] error_code (8 bytes)</li>
+      <li>[bp+16] saved_flags (8 bytes)</li>
+      <li>[bp+24] user_bp (8 bytes)</li>
+      <li>[bp+32] user_sp (8 bytes)</li>
+      <li>[bp+40] user_ip (8 bytes)</li>
+    </ul>
+    <p>
+      After IRET, the processor restores flags, bp, sp, and ip to the saved user
+      values and returns to user privilege.
+    </p>
     <p>
       A table mapping each size to its corresponding size code is displayed
       below.

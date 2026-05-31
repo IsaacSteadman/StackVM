@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM Instruction Documentation | CTZ</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>CTZ (Count Trailing Zeros)</h1>
+    <p>
+      CTZ is a group of 4 instructions (opcodes 0x1C–0x1F) that count the number
+      of trailing (least-significant) zero bits in the top-of-stack value. The
+      result is pushed as a single byte, replacing the input.
+    </p>
+    <p>
+      <strong>Note:</strong> These opcodes replace the deprecated
+      <a href="RROT.html">RROT</a> instructions.
+    </p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Instruction</th>
+          <th>Opcode</th>
+          <th>Input Size</th>
+          <th>Result Range</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>CTZ1</td>
+          <td>0x1C</td>
+          <td>1 byte (8-bit)</td>
+          <td>0–8</td>
+        </tr>
+        <tr>
+          <td>CTZ2</td>
+          <td>0x1D</td>
+          <td>2 bytes (16-bit)</td>
+          <td>0–16</td>
+        </tr>
+        <tr>
+          <td>CTZ4</td>
+          <td>0x1E</td>
+          <td>4 bytes (32-bit)</td>
+          <td>0–32</td>
+        </tr>
+        <tr>
+          <td>CTZ8</td>
+          <td>0x1F</td>
+          <td>8 bytes (64-bit)</td>
+          <td>0–64</td>
+        </tr>
+      </tbody>
+    </table>
+    <div>
+      <h3>Stack Diagram</h3>
+      <ul class="stack">
+        <li>
+          <span class="kw-type">UIntN</span>
+          <span class="kw-var">value</span>
+        </li>
+      </ul>
+      <span>->CTZ<em>N</em>-></span>
+      <ul class="stack">
+        <li>
+          <span class="kw-type">UInt8</span>
+          <span class="kw-var">count</span>
+        </li>
+      </ul>
+    </div>
+    <p>
+      Pops an N-byte unsigned integer from the stack and pushes back a single
+      byte containing the count of consecutive zero bits starting from the
+      least-significant bit. If the input is zero the result equals the full bit
+      width (8, 16, 32, or 64 respectively).
+    </p>
+    <p>Examples:</p>
+    <ul>
+      <li>CTZ8(0x0000_0001_0000_0000) = 32</li>
+      <li>CTZ8(0x0000_0000_0001_0000) = 16</li>
+      <li>CTZ8(1) = 0</li>
+      <li>CTZ8(0) = 64</li>
+    </ul>
+  </body>
+</html>

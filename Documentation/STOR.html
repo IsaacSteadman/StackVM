@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title>StackVM Instruction Documentation | STOR</title>
@@ -115,10 +115,15 @@
             base ptr
           </td>
         </tr>
-        <tr class="ns">
-          <td>ABS_C</td>
+        <tr>
+          <td>ATOMIC_STORE</td>
           <td>0b01000 (0x08)</td>
-          <td><strong>This is not supported on STOR</strong></td>
+          <td>
+            Atomically stores the value at the address on the stack. Consumes
+            one additional ordering byte after the BCR byte (0=RELAXED,
+            1=ACQUIRE, 2=RELEASE, 3=SEQ_CST). Stack: [sz value][8B addr] -&gt;
+            []
+          </td>
         </tr>
         <tr>
           <td>REG_BP</td>
@@ -128,20 +133,29 @@
             <strong>NOTE: Size is ignored and treated as 8</strong>
           </td>
         </tr>
-        <tr class="ns">
-          <td>RES</td>
+        <tr>
+          <td>FENCE_ALL</td>
           <td>0b01010 (0x0A)</td>
-          <td><strong>This is not supported on STOR</strong></td>
+          <td>
+            Full memory fence (MFENCE). Ensures all prior loads and stores are
+            globally visible before any subsequent memory operations.
+          </td>
         </tr>
-        <tr class="ns">
-          <td>EA_R_IP</td>
+        <tr>
+          <td>FENCE_LOAD</td>
           <td>0b01011 (0x0B)</td>
-          <td><strong>This is not supported on STOR</strong></td>
+          <td>
+            Load fence (LFENCE). Ensures all prior loads are complete before
+            subsequent loads.
+          </td>
         </tr>
-        <tr class="ns">
-          <td>TOS</td>
+        <tr>
+          <td>FENCE_STORE</td>
           <td>0b01100 (0x0C)</td>
-          <td><strong>This is not supported on STOR</strong></td>
+          <td>
+            Store fence (SFENCE). Ensures all prior stores are globally visible
+            before subsequent stores.
+          </td>
         </tr>
         <tr>
           <td>SYSREG</td>

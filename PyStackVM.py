@@ -19,9 +19,8 @@ BC_LOAD = 10
 BC_STOR = 11
 BC_CALL_E = 12
 BC_RET_E = 13
-BC_SYSRET = 14
-# TODO: change BC_SYSRET
-BC_INT = 15
+BC_INT128 = 14  # Extended 128-bit / BITOP group (opcode 0x0E)
+BC_INVTLB = 15  # TLB invalidation group (opcode 0x0F)
 BC_LSHIFT1 = 16
 BC_LSHIFT2 = 17
 BC_LSHIFT4 = 18
@@ -30,14 +29,14 @@ BC_RSHIFT1 = 20
 BC_RSHIFT2 = 21
 BC_RSHIFT4 = 22
 BC_RSHIFT8 = 23
-BC_LROT1 = 24
-BC_LROT2 = 25
-BC_LROT4 = 26
-BC_LROT8 = 27
-BC_RROT1 = 28
-BC_RROT2 = 29
-BC_RROT4 = 30
-BC_RROT8 = 31
+BC_CLZ1 = 24  # Count Leading Zeros (1-byte)
+BC_CLZ2 = 25
+BC_CLZ4 = 26
+BC_CLZ8 = 27
+BC_CTZ1 = 28  # Count Trailing Zeros (1-byte)
+BC_CTZ2 = 29
+BC_CTZ4 = 30
+BC_CTZ8 = 31
 BC_AND1 = 32
 BC_AND2 = 33
 BC_AND4 = 34
@@ -142,16 +141,29 @@ BCR_R_BP1 = 0x04
 BCR_R_BP2 = 0x05
 BCR_R_BP4 = 0x06
 BCR_R_BP8 = 0x07
-BCR_ABS_C = 0x08
+BCR_ABS_C = 0x08  # LOAD: load constant from instruction stream
+BCR_ATOMIC_STORE = 0x08  # STOR: atomic seq-cst store [sz value][8B addr]
 BCR_REG_BP = 0x09
-BCR_RES = 0x0A
-BCR_EA_R_IP = 0x0B
-BCR_TOS = 0x0C
+BCR_FENCE_ALL = 0x0A  # STOR: MFENCE (all)
+BCR_EA_R_IP = 0x0B  # LOAD: effective address relative to IP
+BCR_FENCE_LOAD = 0x0B  # STOR: LFENCE (load fence)
+BCR_TOS = 0x0C  # LOAD: peek TOS
+BCR_FENCE_STORE = 0x0C  # STOR: SFENCE (store fence)
 BCR_SYSREG = 0x0D
+# Atomic LOAD BCR codes (require 1-byte memory ordering after BCR byte)
+BCR_ATOMIC_LOAD = 0x0E  # [ordering][8B addr] -> [sz val]
+BCR_ATOMIC_XCHG = 0x0F  # [ordering][8B addr] -> [sz old]; pops [sz new] first
+BCR_ATOMIC_CAS = 0x10  # [ordering][8B addr] -> [sz old]; pops [sz desired][sz expected]
+BCR_ATOMIC_FADD = 0x11  # fetch-and-add
+BCR_ATOMIC_FSUB = 0x12  # fetch-and-subtract
+BCR_ATOMIC_FAND = 0x13  # fetch-and-AND
+BCR_ATOMIC_FOR = 0x14  # fetch-and-OR
+BCR_ATOMIC_FXOR = 0x15  # fetch-and-XOR
 BCR_SZ_1 = 0x0 << 5
 BCR_SZ_2 = 0x1 << 5
 BCR_SZ_4 = 0x2 << 5
 BCR_SZ_8 = 0x3 << 5
+BCR_SZ_16 = 0x4 << 5
 BCR_TYP_MASK = 0x1F  # low 5 bits
 BCR_SZ_MASK = 0xE0  # high 3 bits 0:1, 1:2, 2:4, 3:8
 BCR_R_BP_MASK = 0x1C
@@ -221,6 +233,8 @@ BCCE_S_ARG_SZ1 = 0 << 3
 BCCE_S_ARG_SZ2 = 1 << 3
 BCCE_S_ARG_SZ4 = 2 << 3
 BCCE_S_ARG_SZ8 = 3 << 3
+BCCE_IS_INT = 1 << 5  # CALL_E flag: software interrupt (IS_SYS=0 path)
+BCRE_IS_INT = 1 << 6  # RET_E flag: IRET interrupt-return (IS_SYS=1 path)
 
 # StackVm SysReg
 SVSRB_SP = 0x04
@@ -237,47 +251,71 @@ SVSR_KERNEL_BP = 0x06
 SVSR_USER_BP = 0x07
 SVSR_KERNEL_TLPTR = 0x08
 SVSR_USER_TLPTR = 0x09
+SVSR_CORE_ID = 0x0A  # R (kernel): current core ID; 0 on single-core
+SVSR_IPI = 0x0B  # W (kernel): SMP IPI -- (irq << 8) | target_core_id
+SVSR_CYCLE_COUNT = 0x0C  # R (kernel): per-core cycle counter
+SVSR_PAGE_FAULT_ADDR = (
+    0x0D  # R (kernel): CR2 equivalent; set by VM on page/protect fault
+)
 
 StackVM_SVSR_Codes = {
-    "HYPER_TLPTR": 0x00,
-    "KERNEL_TLPTR": 0x01,
-    "USER_TLPTR": 0x02,
-    "WEB_TLPTR": 0x03,
-    "HYPER_SP": 0x04,
-    "KERNEL_SP": 0x05,
-    "USER_SP": 0x06,
-    "WEB_SP": 0x07,
-    "HYPER_SYS_FN": 0x08,
-    "KERNEL_SYS_FN": 0x09,
-    "USER_SYS_FN": 0x0A,
-    "WEB_SYS_FN": 0x0B,
-    "FLAGS": 0x0C,
-    "HYPER_ISR": 0x0E,
-    "KERNEL_ISR": 0x0F,
+    # v3 two-privilege-level layout
+    "FLAGS": SVSR_FLAGS,
+    "ISR": SVSR_ISR,
+    "SDP": SVSR_SDP,
+    "SYS_FN": SVSR_SYS_FN,
+    "KERNEL_SP": SVSR_KERNEL_SP,
+    "USER_SP": SVSR_USER_SP,
+    "KERNEL_BP": SVSR_KERNEL_BP,
+    "USER_BP": SVSR_USER_BP,
+    "KERNEL_TLPTR": SVSR_KERNEL_TLPTR,
+    "USER_TLPTR": SVSR_USER_TLPTR,
+    "CORE_ID": SVSR_CORE_ID,
+    "IPI": SVSR_IPI,
+    "CYCLE_COUNT": SVSR_CYCLE_COUNT,
+    "PAGE_FAULT_ADDR": SVSR_PAGE_FAULT_ADDR,
 }
 
-INT_INVAL_OPCODE = 6
-INT_PROTECT_FAULT = 13
-INT_PAGE_FAULT = 14
-INT_INVAL_SYSCALL = 15
-INT_LST = [
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "INVAL_OPCODE",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "UNKNOWN",
-    "PROTECT_FAULT",
-    "PAGE_FAULT",
-    "INVAL_SYSCALL",
-] + ["UNKNOWN"] * 240
+INT_DIV_BY_ZERO = 0x00
+INT_DEBUG = 0x01
+INT_NMI = 0x02
+INT_BREAKPOINT = 0x03
+INT_OVERFLOW = 0x04
+INT_BOUNDS_CHECK = 0x05
+INT_INVAL_OPCODE = 0x06
+INT_FPU_FAULT = 0x07
+INT_DOUBLE_FAULT = 0x08
+INT_PROTECT_FAULT = 0x0D
+INT_PAGE_FAULT = 0x0E
+INT_INVAL_SYSCALL = 0x0F
+INT_HW_IO = 0x10
+INT_TIMER = 0x11
+INT_TLB_SHOOTDOWN = 0x1F
+INT_LST = (
+    [
+        "DIV_BY_ZERO",
+        "DEBUG",
+        "NMI",
+        "BREAKPOINT",
+        "OVERFLOW",
+        "BOUNDS_CHECK",
+        "INVAL_OPCODE",
+        "FPU_FAULT",
+        "DOUBLE_FAULT",
+        "UNKNOWN",
+        "UNKNOWN",
+        "UNKNOWN",
+        "UNKNOWN",
+        "PROTECT_FAULT",
+        "PAGE_FAULT",
+        "INVAL_SYSCALL",
+        "HW_IO",
+        "TIMER",
+    ]
+    + ["UNKNOWN"] * 14
+    + ["TLB_SHOOTDOWN"]
+    + ["UNKNOWN"] * 224
+)
 
 MRQ_DONT_CHECK = 0
 MRQ_READ = 1
@@ -310,8 +348,8 @@ LstStackVM_Codes = [
     "STOR",
     "CALL_E",
     "RET_E",
-    "SYSRET",
-    "INT",
+    "INT128",
+    "INVTLB",
     "LSHIFT1",
     "LSHIFT2",
     "LSHIFT4",
@@ -320,14 +358,14 @@ LstStackVM_Codes = [
     "RSHIFT2",
     "RSHIFT4",
     "RSHIFT8",
-    "LROT1",
-    "LROT2",
-    "LROT4",
-    "LROT8",
-    "RROT1",
-    "RROT2",
-    "RROT4",
-    "RROT8",
+    "CLZ1",
+    "CLZ2",
+    "CLZ4",
+    "CLZ8",
+    "CTZ1",
+    "CTZ2",
+    "CTZ4",
+    "CTZ8",
     "AND1",
     "AND2",
     "AND4",
@@ -423,7 +461,7 @@ LstStackVM_Codes = [
     "CALL",
     "RCALL",
     "RET",
-    "RET_N2",
+    "INV_OPCODE",
 ]
 
 StackVM_Codes = {
@@ -441,8 +479,8 @@ StackVM_Codes = {
     "STOR": 11,
     "CALL_E": 12,
     "RET_E": 13,
-    "SYSRET": 14,
-    "INT": 15,
+    "INT128": 14,
+    "INVTLB": 15,
     "LSHIFT1": 16,
     "LSHIFT2": 17,
     "LSHIFT4": 18,
@@ -451,14 +489,14 @@ StackVM_Codes = {
     "RSHIFT2": 21,
     "RSHIFT4": 22,
     "RSHIFT8": 23,
-    "LROT1": 24,
-    "LROT2": 25,
-    "LROT4": 26,
-    "LROT8": 27,
-    "RROT1": 28,
-    "RROT2": 29,
-    "RROT4": 30,
-    "RROT8": 31,
+    "CLZ1": 24,
+    "CLZ2": 25,
+    "CLZ4": 26,
+    "CLZ8": 27,
+    "CTZ1": 28,
+    "CTZ2": 29,
+    "CTZ4": 30,
+    "CTZ8": 31,
     "AND1": 32,
     "AND2": 33,
     "AND4": 34,
@@ -554,7 +592,7 @@ StackVM_Codes = {
     "CALL": 124,
     "RCALL": 125,
     "RET": 126,
-    "RET_N2": 127,
+    "INV_OPCODE": 127,
 }
 
 
@@ -575,15 +613,29 @@ StackVM_BCR_Codes = {
     "R_BP4": 0x06,
     "R_BP8": 0x07,
     "ABS_C": 0x08,
+    "ATOMIC_STORE": 0x08,  # STOR context: atomic seq-cst store
     "REG_BP": 0x09,
     "RES": 0x0A,
+    "FENCE_ALL": 0x0A,  # STOR context: MFENCE
     "EA_R_IP": 0x0B,
+    "FENCE_LOAD": 0x0B,  # STOR context: LFENCE
     "TOS": 0x0C,
+    "FENCE_STORE": 0x0C,  # STOR context: SFENCE
     "SYSREG": 0x0D,
+    # Atomic LOAD BCR codes (each followed by 1 ordering byte)
+    "ATOMIC_LOAD": 0x0E,
+    "ATOMIC_XCHG": 0x0F,
+    "ATOMIC_CAS": 0x10,
+    "ATOMIC_FADD": 0x11,
+    "ATOMIC_FSUB": 0x12,
+    "ATOMIC_FAND": 0x13,
+    "ATOMIC_FOR": 0x14,
+    "ATOMIC_FXOR": 0x15,
     "SZ_1": 0x0 << 5,
     "SZ_2": 0x1 << 5,
     "SZ_4": 0x2 << 5,
     "SZ_8": 0x3 << 5,
+    "SZ_16": 0x4 << 5,
 }
 StackVM_BCS_Codes = {
     "SZ1_A": 0x00,
@@ -616,6 +668,8 @@ StackVM_BCC_Codes = {
     "F_4_I": 0x09,
     "F_8_I": 0x0A,
     "F_16_I": 0x0B,
+    "UI_16_I": 0x0C,  # uint128 input
+    "SI_16_I": 0x0D,  # int128 input
     "UI_1_O": 0x00,
     "SI_1_O": 0x10,
     "UI_2_O": 0x20,
@@ -628,6 +682,8 @@ StackVM_BCC_Codes = {
     "F_4_O": 0x90,
     "F_8_O": 0xA0,
     "F_16_O": 0xB0,
+    "UI_16_O": 0xC0,  # uint128 output
+    "SI_16_O": 0xD0,  # int128 output
 }
 StackVM_BCCE_Codes = {
     "SYSCALL": 0x80,
@@ -641,33 +697,80 @@ StackVM_BCCE_Codes = {
     "S_ARG_SZ4": 0x10,
     "S_ARG_SZ8": 0x18,
 }
+StackVM_BC128_Codes = {
+    "ADD128U": 0x00,
+    "ADD128S": 0x01,
+    "SUB128U": 0x02,
+    "SUB128S": 0x03,
+    "MUL128U": 0x04,
+    "MUL128S": 0x05,
+    "DIV128U": 0x06,
+    "DIV128S": 0x07,
+    "MOD128U": 0x08,
+    "MOD128S": 0x09,
+    "AND128": 0x0A,
+    "OR128": 0x0B,
+    "XOR128": 0x0C,
+    "NOT128": 0x0D,
+    "LSHIFT128": 0x0E,
+    "RSHIFT128U": 0x0F,
+    "RSHIFT128S": 0x10,
+    "CMP128U": 0x11,
+    "CMP128S": 0x12,
+    "POPCNT1": 0x13,
+    "POPCNT2": 0x14,
+    "POPCNT4": 0x15,
+    "POPCNT8": 0x16,
+    "BSWAP2": 0x17,
+    "BSWAP4": 0x18,
+    "BSWAP8": 0x19,
+}
+StackVM_INVTLB_Codes = {"BEGIN": 0x00, "COMMIT": 0x01}
+StackVM_ORDERING_Codes = {
+    "RELAXED": 0x00,
+    "ACQUIRE": 0x01,
+    "RELEASE": 0x02,
+    "SEQ_CST": 0x03,
+}
 LstStackVM_BCR_Types = [
-    "ABS_A4",
-    "ABS_A8",
-    "ABS_S4",
-    "ABS_S8",
-    "R_BP1",
-    "R_BP2",
-    "R_BP4",
-    "R_BP8",
-    "ABS_C",
-    "REG_BP",
-    "RES",
-    "EA_R_IP",
-    "TOS",
-    "SYSREG",
+    "ABS_A4",  # 0x00
+    "ABS_A8",  # 0x01
+    "ABS_S4",  # 0x02
+    "ABS_S8",  # 0x03
+    "R_BP1",  # 0x04
+    "R_BP2",  # 0x05
+    "R_BP4",  # 0x06
+    "R_BP8",  # 0x07
+    "ABS_C",  # 0x08  (LOAD) / ATOMIC_STORE (STOR)
+    "REG_BP",  # 0x09
+    "FENCE_ALL",  # 0x0A  (STOR: MFENCE)
+    "EA_R_IP",  # 0x0B  (LOAD) / FENCE_LOAD (STOR: LFENCE)
+    "TOS",  # 0x0C  (LOAD) / FENCE_STORE (STOR: SFENCE)
+    "SYSREG",  # 0x0D
+    "ATOMIC_LOAD",  # 0x0E
+    "ATOMIC_XCHG",  # 0x0F
+    "ATOMIC_CAS",  # 0x10
+    "ATOMIC_FADD",  # 0x11
+    "ATOMIC_FSUB",  # 0x12
+    "ATOMIC_FAND",  # 0x13
+    "ATOMIC_FOR",  # 0x14
+    "ATOMIC_FXOR",  # 0x15
 ]
 LstStackVM_sysregs = [
-    "FLAGS",
-    "ISR",
-    "SDP",
-    "SYS_FN",
-    "KERNEL_SP",
-    "USER_SP",
-    "KERNEL_BP",
-    "USER_BP",
-    "KERNEL_TLPTR",
-    "USER_TLPTR",
+    "FLAGS",  # 0x00
+    "ISR",  # 0x01
+    "SDP",  # 0x02
+    "SYS_FN",  # 0x03
+    "KERNEL_SP",  # 0x04
+    "USER_SP",  # 0x05
+    "KERNEL_BP",  # 0x06
+    "USER_BP",  # 0x07
+    "KERNEL_TLPTR",  # 0x08
+    "USER_TLPTR",  # 0x09
+    "CORE_ID",  # 0x0A
+    "IPI",  # 0x0B
+    "CYCLE_COUNT",  # 0x0C
+    "PAGE_FAULT_ADDR",  # 0x0D
 ]
 LstStackVM_BCS_Types = [
     "SZ1_",
@@ -692,7 +795,221 @@ LstStackVM_BCC_Types = [
     "F_4_",
     "F_8_",
     "F_16_",
+    "UI_16_",  # 0xC: uint128
+    "SI_16_",  # 0xD: int128
 ]
+
+
+# ---------------------------------------------------------------------------
+# CLZ / CTZ / POPCNT / BSWAP helpers
+# ---------------------------------------------------------------------------
+
+
+def clz1(a: int, n_bits: int) -> int:
+    """Count leading zeros in an n_bits-wide value."""
+    if a == 0:
+        return n_bits
+    return n_bits - a.bit_length()
+
+
+def ctz1(a: int, n_bits: int) -> int:
+    """Count trailing zeros in an n_bits-wide value."""
+    if a == 0:
+        return n_bits
+    return (a & -a).bit_length() - 1
+
+
+def popcnt(a: int) -> int:
+    """Population count (number of set bits)."""
+    return bin(a).count("1")
+
+
+def bswap(a: int, n_bytes: int) -> int:
+    """Reverse byte order of an n_bytes-wide integer."""
+    return int.from_bytes(a.to_bytes(n_bytes, "little"), "big")
+
+
+# ---------------------------------------------------------------------------
+# INT128 / BITOP extended group (opcode 0x0E) sub-operation codes
+# ---------------------------------------------------------------------------
+BC128_ADD128U = 0x00
+BC128_ADD128S = 0x01
+BC128_SUB128U = 0x02
+BC128_SUB128S = 0x03
+BC128_MUL128U = 0x04
+BC128_MUL128S = 0x05
+BC128_DIV128U = 0x06
+BC128_DIV128S = 0x07
+BC128_MOD128U = 0x08
+BC128_MOD128S = 0x09
+BC128_AND128 = 0x0A
+BC128_OR128 = 0x0B
+BC128_XOR128 = 0x0C
+BC128_NOT128 = 0x0D
+BC128_LSHIFT128 = 0x0E
+BC128_RSHIFT128U = 0x0F
+BC128_RSHIFT128S = 0x10
+BC128_CMP128U = 0x11
+BC128_CMP128S = 0x12
+BC128_POPCNT1 = 0x13
+BC128_POPCNT2 = 0x14
+BC128_POPCNT4 = 0x15
+BC128_POPCNT8 = 0x16
+BC128_BSWAP2 = 0x17
+BC128_BSWAP4 = 0x18
+BC128_BSWAP8 = 0x19
+
+_MASK128 = (1 << 128) - 1
+
+
+def vm_int128(vm_inst):
+    """
+    Opcode 0x0E — 128-bit integer arithmetic and BITOP extended group.
+    :param VirtualMachine vm_inst:
+    """
+    op = vm_inst.get_instr_dat(1)
+    if op is None:
+        vm_inst.ip -= 1
+        return
+    if op == BC128_ADD128U:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, (a + b) & _MASK128)
+    elif op == BC128_ADD128S:
+        b = vm_inst.pop(16, 1)
+        a = vm_inst.pop(16, 1)
+        vm_inst.push(16, a + b, 1)
+    elif op == BC128_SUB128U:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, (a - b) & _MASK128)
+    elif op == BC128_SUB128S:
+        b = vm_inst.pop(16, 1)
+        a = vm_inst.pop(16, 1)
+        vm_inst.push(16, a - b, 1)
+    elif op == BC128_MUL128U:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, (a * b) & _MASK128)
+    elif op == BC128_MUL128S:
+        b = vm_inst.pop(16, 1)
+        a = vm_inst.pop(16, 1)
+        vm_inst.push(16, a * b, 1)
+    elif op == BC128_DIV128U:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        if b == 0:
+            vm_inst.trap(INT_DIV_BY_ZERO, vm_inst.ip)
+            return
+        vm_inst.push(16, a // b)
+    elif op == BC128_DIV128S:
+        b = vm_inst.pop(16, 1)
+        a = vm_inst.pop(16, 1)
+        if b == 0:
+            vm_inst.trap(INT_DIV_BY_ZERO, vm_inst.ip)
+            return
+        vm_inst.push(16, a // b, 1)
+    elif op == BC128_MOD128U:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        if b == 0:
+            vm_inst.trap(INT_DIV_BY_ZERO, vm_inst.ip)
+            return
+        vm_inst.push(16, a % b)
+    elif op == BC128_MOD128S:
+        b = vm_inst.pop(16, 1)
+        a = vm_inst.pop(16, 1)
+        if b == 0:
+            vm_inst.trap(INT_DIV_BY_ZERO, vm_inst.ip)
+            return
+        vm_inst.push(16, a % b, 1)
+    elif op == BC128_AND128:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, a & b)
+    elif op == BC128_OR128:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, a | b)
+    elif op == BC128_XOR128:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, a ^ b)
+    elif op == BC128_NOT128:
+        a = vm_inst.pop(16)
+        vm_inst.push(16, (~a) & _MASK128)
+    elif op == BC128_LSHIFT128:
+        shift = vm_inst.pop(1)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, (a << shift) & _MASK128)
+    elif op == BC128_RSHIFT128U:
+        shift = vm_inst.pop(1)
+        a = vm_inst.pop(16)
+        vm_inst.push(16, a >> shift)
+    elif op == BC128_RSHIFT128S:
+        shift = vm_inst.pop(1)
+        a = vm_inst.pop(16, 1)
+        vm_inst.push(16, a >> shift, 1)
+    elif op == BC128_CMP128U:
+        b = vm_inst.pop(16)
+        a = vm_inst.pop(16)
+        vm_inst.push(1, sign_of(a - b), 1)
+    elif op == BC128_CMP128S:
+        b = vm_inst.pop(16, 1)
+        a = vm_inst.pop(16, 1)
+        vm_inst.push(1, sign_of(a - b), 1)
+    elif op == BC128_POPCNT1:
+        vm_inst.push(1, popcnt(vm_inst.pop(1)))
+    elif op == BC128_POPCNT2:
+        vm_inst.push(1, popcnt(vm_inst.pop(2)))
+    elif op == BC128_POPCNT4:
+        vm_inst.push(1, popcnt(vm_inst.pop(4)))
+    elif op == BC128_POPCNT8:
+        vm_inst.push(1, popcnt(vm_inst.pop(8)))
+    elif op == BC128_BSWAP2:
+        vm_inst.push(2, bswap(vm_inst.pop(2), 2))
+    elif op == BC128_BSWAP4:
+        vm_inst.push(4, bswap(vm_inst.pop(4), 4))
+    elif op == BC128_BSWAP8:
+        vm_inst.push(8, bswap(vm_inst.pop(8), 8))
+    else:
+        vm_inst.trap(INT_INVAL_OPCODE, vm_inst.ip)
+
+
+# ---------------------------------------------------------------------------
+# INVTLB group (opcode 0x0F) sub-operation codes
+# ---------------------------------------------------------------------------
+INVTLB_BEGIN = 0x00
+INVTLB_COMMIT = 0x01
+
+
+def vm_invtlb(vm_inst):
+    """
+    Opcode 0x0F — TLB invalidation protocol (kernel-only).
+    :param VirtualMachine vm_inst:
+    """
+    op = vm_inst.get_instr_dat(1)
+    if op is None:
+        vm_inst.ip -= 1
+        return
+    if vm_inst.priv_lvl != 0:
+        vm_inst.trap(INT_PROTECT_FAULT, vm_inst.ip)
+        return
+    if op == INVTLB_BEGIN:
+        # [8B tlptr][8B vaddr_base][8B vaddr_size] -> --  (pop order: size, base, ptr)
+        vaddr_size = vm_inst.pop(8)
+        vaddr_base = vm_inst.pop(8)
+        tlptr = vm_inst.pop(8)
+        vm_inst._tlb_inv_tlptr = tlptr
+        vm_inst._tlb_inv_base = vaddr_base
+        vm_inst._tlb_inv_size = vaddr_size
+    elif op == INVTLB_COMMIT:
+        # Flush local TLB for registered range (no-op in single-core emulator)
+        vm_inst._tlb_inv_tlptr = 0
+        vm_inst._tlb_inv_base = 0
+        vm_inst._tlb_inv_size = 0
+    else:
+        vm_inst.trap(INT_INVAL_OPCODE, vm_inst.ip)
 
 
 def vm_load(vm_inst):
@@ -799,6 +1116,95 @@ def vm_load(vm_inst):
             return
         if not vm_inst.push(8, vm_inst.sys_regs[which]):
             vm_inst.ip -= 3
+    elif typ == BCR_ATOMIC_LOAD:
+        # [ordering_byte][addr on stack] -> [sz value]  (single-core: regular load)
+        _ordering = vm_inst.get_instr_dat(1)  # consume ordering byte
+        addr = vm_inst.pop(8)
+        if addr is None:
+            vm_inst.ip -= 3
+            return
+        data = vm_inst.get(sz, addr)
+        if data is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8
+            return
+        vm_inst.push(sz, data)
+    elif typ == BCR_ATOMIC_XCHG:
+        # [ordering][addr stack] -> [old]; pops [new_val] first
+        _ordering = vm_inst.get_instr_dat(1)
+        addr = vm_inst.pop(8)
+        if addr is None:
+            vm_inst.ip -= 3
+            return
+        new_val = vm_inst.pop(sz)
+        if new_val is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8
+            return
+        old_val = vm_inst.get(sz, addr)
+        if old_val is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8 + sz
+            return
+        vm_inst.set(sz, addr, new_val)
+        vm_inst.push(sz, old_val)
+    elif typ == BCR_ATOMIC_CAS:
+        # [ordering][addr stack] -> [old]; pops [desired][expected]
+        _ordering = vm_inst.get_instr_dat(1)
+        addr = vm_inst.pop(8)
+        if addr is None:
+            vm_inst.ip -= 3
+            return
+        expected = vm_inst.pop(sz)
+        desired = vm_inst.pop(sz)
+        if desired is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8 + sz
+            return
+        old_val = vm_inst.get(sz, addr)
+        if old_val is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8 + 2 * sz
+            return
+        if old_val == expected:
+            vm_inst.set(sz, addr, desired)
+        vm_inst.push(sz, old_val)
+    elif typ in (
+        BCR_ATOMIC_FADD,
+        BCR_ATOMIC_FSUB,
+        BCR_ATOMIC_FAND,
+        BCR_ATOMIC_FOR,
+        BCR_ATOMIC_FXOR,
+    ):
+        # [ordering][addr stack] -> [old]; pops [operand]
+        _ordering = vm_inst.get_instr_dat(1)
+        addr = vm_inst.pop(8)
+        if addr is None:
+            vm_inst.ip -= 3
+            return
+        operand = vm_inst.pop(sz)
+        if operand is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8
+            return
+        old_val = vm_inst.get(sz, addr)
+        if old_val is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8 + sz
+            return
+        mask = (1 << (8 * sz)) - 1
+        if typ == BCR_ATOMIC_FADD:
+            new_val = (old_val + operand) & mask
+        elif typ == BCR_ATOMIC_FSUB:
+            new_val = (old_val - operand) & mask
+        elif typ == BCR_ATOMIC_FAND:
+            new_val = old_val & operand
+        elif typ == BCR_ATOMIC_FOR:
+            new_val = old_val | operand
+        else:
+            new_val = old_val ^ operand  # FXOR
+        vm_inst.set(sz, addr, new_val)
+        vm_inst.push(sz, old_val)
     else:
         raise ValueError(
             "Unsupported BCR code for BC_LOAD instruction: %u at 0x%X"
@@ -880,19 +1286,27 @@ def vm_store(vm_inst):
         which = vm_inst.get_instr_dat(1)
         reg_v = vm_inst.pop(8)
         vm_inst.sys_regs[which] = reg_v
-        if which == 0xC:
-            vm_inst.priv_lvl = (reg_v >> 8) & 3
+        if which == SVSR_FLAGS:  # v3: FLAGS is at 0x00
+            vm_inst.priv_lvl = (reg_v >> 8) & 1
             vm_inst.priority = reg_v & 0xFF
-    elif typ == BCR_ABS_C:
-        raise ValueError(
-            "BCR_ABS_C is unsupported on store instruction at 0x%X" % vm_inst.ip
-        )
+            vm_inst.virt_mem_mode = (reg_v >> 10) & 0xF
+    elif typ == BCR_ATOMIC_STORE:  # 0x08 on STOR: atomic seq-cst store
+        # [sz value][8B addr] -> --
+        _ordering = vm_inst.get_instr_dat(1)  # consume ordering byte
+        addr = vm_inst.pop(8)
+        if addr is None:
+            vm_inst.ip -= 3
+            return
+        data = vm_inst.pop(sz)
+        if data is None:
+            vm_inst.ip -= 3
+            vm_inst.sp -= 8
+            return
+        vm_inst.set(sz, addr, data)
     elif typ == BCR_REG_BP:
         vm_inst.bp = vm_inst.pop(8)
-    elif typ == BCR_EA_R_IP:
-        raise ValueError(
-            "BCR_EA_R_IP is unsupported on store instruction at 0x%X" % vm_inst.ip
-        )
+    elif typ in (BCR_FENCE_ALL, BCR_FENCE_LOAD, BCR_FENCE_STORE):
+        pass  # single-core emulator: memory fences are no-ops
     else:
         raise ValueError(
             "Unsupported BCR code for BC_STOR instruction: %u at 0x%X"
@@ -908,8 +1322,12 @@ def vm_exit(vm_inst):
 
 
 def get_vm_sz_type(conv_typ):
-    if conv_typ >= 0xC:
-        raise NotImplementedError("Not Implemented")
+    if conv_typ == 0xC:  # uint128
+        return 16, 0
+    if conv_typ == 0xD:  # int128
+        return 16, 1
+    if conv_typ >= 0xE:
+        raise NotImplementedError("CONV type code 0x%X not implemented" % conv_typ)
     is_flt = bool(conv_typ & 0x8)
     typ = 2 if is_flt else (conv_typ & 0x1)
     sz = conv_typ & 0x7
@@ -974,10 +1392,17 @@ def vm_call_ext(vm_inst):
         raise NotImplementedError("SysCall (CALL_E with IS_SYS=1) is unsupported")
         """
     else:
-        addr = vm_inst.pop(8)
-        if a & 0x40:
+        if a & BCCE_IS_INT:  # bit 5: software interrupt
+            int_n = vm_inst.get_instr_dat(1)
+            if int_n is None:
+                vm_inst.ip -= 2
+                return
+            vm_inst.switch_to_interrupt(int_n)
+        elif a & 0x40:
+            addr = vm_inst.pop(8)
             vm_inst.call(addr + vm_inst.ip)
         else:
+            addr = vm_inst.pop(8)
             vm_inst.call(addr)
 
 
@@ -987,7 +1412,10 @@ def vm_ret_ext(vm_inst):
     """
     a = vm_inst.get_instr_dat(1)
     if a & 0x80:
-        vm_inst.sysret()
+        if a & BCRE_IS_INT:  # bit 6 when IS_SYS=1: IRET
+            vm_inst.return_from_interrupt()
+        else:
+            vm_inst.sysret()
         # raise NotImplementedError("SysCall (CALL_E with IS_SYS=1) is unsupported")
     else:
         sz_cls_rst_sp = (a & 0x60) >> 5
@@ -1326,8 +1754,8 @@ class VirtualMachine(object):
         vm_store,
         vm_call_ext,
         vm_ret_ext,
-        vm_sys_ret,
-        vm_interrupt,
+        vm_int128,  # 0x0E: INT128 / BITOP extended group
+        vm_invtlb,  # 0x0F: INVTLB TLB-invalidation group
         # Bit/Byte Manip
         lambda vm_inst: vm_inst.push(1, lshift1(vm_inst.pop(1), vm_inst.pop(1))),
         lambda vm_inst: vm_inst.push(2, lshift1(vm_inst.pop(1), vm_inst.pop(2))),
@@ -1337,14 +1765,16 @@ class VirtualMachine(object):
         lambda vm_inst: vm_inst.push(2, rshift1(vm_inst.pop(1), vm_inst.pop(2))),
         lambda vm_inst: vm_inst.push(4, rshift1(vm_inst.pop(1), vm_inst.pop(4))),
         lambda vm_inst: vm_inst.push(8, rshift1(vm_inst.pop(1), vm_inst.pop(8))),
-        lambda vm_inst: vm_inst.push(1, lrot1(vm_inst.pop(1), vm_inst.pop(1), 8)),
-        lambda vm_inst: vm_inst.push(2, lrot1(vm_inst.pop(1), vm_inst.pop(2), 16)),
-        lambda vm_inst: vm_inst.push(4, lrot1(vm_inst.pop(1), vm_inst.pop(4), 32)),
-        lambda vm_inst: vm_inst.push(8, lrot1(vm_inst.pop(1), vm_inst.pop(8), 64)),
-        lambda vm_inst: vm_inst.push(1, rrot1(vm_inst.pop(1), vm_inst.pop(1), 8)),
-        lambda vm_inst: vm_inst.push(2, rrot1(vm_inst.pop(1), vm_inst.pop(2), 16)),
-        lambda vm_inst: vm_inst.push(4, rrot1(vm_inst.pop(1), vm_inst.pop(4), 32)),
-        lambda vm_inst: vm_inst.push(8, rrot1(vm_inst.pop(1), vm_inst.pop(8), 64)),
+        # CLZ — Count Leading Zeros (replaces deprecated LROT)
+        lambda vm_inst: vm_inst.push(1, clz1(vm_inst.pop(1), 8)),
+        lambda vm_inst: vm_inst.push(1, clz1(vm_inst.pop(2), 16)),
+        lambda vm_inst: vm_inst.push(1, clz1(vm_inst.pop(4), 32)),
+        lambda vm_inst: vm_inst.push(1, clz1(vm_inst.pop(8), 64)),
+        # CTZ — Count Trailing Zeros (replaces deprecated RROT)
+        lambda vm_inst: vm_inst.push(1, ctz1(vm_inst.pop(1), 8)),
+        lambda vm_inst: vm_inst.push(1, ctz1(vm_inst.pop(2), 16)),
+        lambda vm_inst: vm_inst.push(1, ctz1(vm_inst.pop(4), 32)),
+        lambda vm_inst: vm_inst.push(1, ctz1(vm_inst.pop(8), 64)),
         # ALU Sign Independent
         lambda vm_inst: vm_inst.push(1, and1(vm_inst.pop(1), vm_inst.pop(1))),
         lambda vm_inst: vm_inst.push(2, and1(vm_inst.pop(2), vm_inst.pop(2))),
@@ -1456,7 +1886,9 @@ class VirtualMachine(object):
         lambda vm_inst: vm_inst.call(vm_inst.pop(8)),
         lambda vm_inst: vm_inst.call(vm_inst.pop(8, 1) + vm_inst.ip),
         lambda vm_inst: vm_inst.ret(),
-        lambda vm_inst: vm_inst.ret(vm_inst.get_instr_dat(2)),
+        lambda vm_inst: vm_inst.trap(
+            INT_INVAL_OPCODE, vm_inst.ip
+        ),  # 0x7F: reserved (IRET folded into RET_E)
     ]
     assert BC_Dispatch[BC_LOAD] is vm_load
     assert BC_Dispatch[BC_STOR] is vm_store
@@ -1496,6 +1928,10 @@ class VirtualMachine(object):
             True  # True if virtualizing syscalls from USER to KERNEL
         )
         self.watch_data = []
+        # TLB invalidation state (used by INVTLB_BEGIN / INVTLB_COMMIT)
+        self._tlb_inv_tlptr = 0
+        self._tlb_inv_base = 0
+        self._tlb_inv_size = 0
 
     def check_perm_set_or_clr_error(
         self,
@@ -2335,110 +2771,108 @@ class VirtualMachine(object):
                 else:
                     raise
             if apic.int_ready:
-                self.switch_to_interrupt_direct(
-                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
-                )
+                self.switch_to_interrupt_direct(apic.which_int, apic.arg0)
 
-    def switch_to_interrupt(self, int_n: int):
-        old_sp = self.sp
-        arg0 = self.get(8, old_sp)
-        arg1 = self.get(8, old_sp + 8)
-        arg2 = self.get(8, old_sp + 16)
-        arg3 = self.get(8, old_sp + 24)
-        old_ip = self.ip
-        old_bp = self.bp
-        self.sys_regs[SVSRB_SP | self.priv_lvl] = old_sp
-        isr_ptr_k = self.sys_regs[SVSR_KERNEL_ISR]
-        isr_ptr_h = self.sys_regs[SVSR_HYPER_ISR]
-        assert isr_ptr_k & 0x7FF == 0, "expected isr table to be aligned to 2048 bytes"
-        assert isr_ptr_h & 0x7FF == 0, "expected isr table to be aligned to 2048 bytes"
-        isr_tgt = (
-            0
-            if self.priv_lvl != 0 and isr_ptr_k == 0
-            else self.get_as_priv(1, 8, isr_ptr_k | (int_n << 3))
-        )
-        isr_priv = 1
-        if isr_tgt == 0 and isr_ptr_h != 0:
-            isr_tgt = self.get_as_priv(0, 8, isr_ptr_h | (int_n << 3))
-            isr_priv = 0
-        if isr_tgt == 0 or isr_priv < self.virtual_syscalls_lvl:
-            return
-        old_flags = self.sys_regs[SVSR_FLAGS]
-        self.set_flags_pri_priv(self.priority, isr_priv)
-        self.sp = self.sys_regs[SVSRB_SP | isr_priv]
-        self.push(8, arg3)
-        self.push(8, arg2)
-        self.push(8, arg1)
-        self.push(8, arg0)
-        self.push(
-            8, old_flags
-        )  # TODO: note that these flags will be checked to prevent privilege escalation
-        self.push(8, old_bp)
-        self.push(8, old_ip)
-        self.ip = isr_tgt
+    def switch_to_interrupt(self, int_n: int, error_code: int = 0):
+        """
+        Enter an interrupt handler.  Builds the v3 interrupt frame on the kernel
+        stack and jumps to the ISR from SVSR_ISR table entry int_n.
+
+        Frame layout (48 bytes, bp = sp after setup):
+          [bp+0]:  int_num        <- TOS
+          [bp+8]:  error_code
+          [bp+16]: saved_flags
+          [bp+24]: user_bp
+          [bp+32]: user_sp
+          [bp+40]: user_ip
+        """
+        user_ip = self.ip
+        user_sp = self.sp
+        user_bp = self.bp
+        saved_flags = self.sys_regs[SVSR_FLAGS]
+
+        # Look up 16-byte ISR entry: [8B isr_flags][8B handler_addr]
+        isr_base = self.sys_regs[SVSR_ISR]
+        if isr_base == 0:
+            raise Exception(
+                "interrupt %u (%s): ISR table not initialised (SVSR_ISR == 0)"
+                % (int_n, INT_LST[int_n])
+            )
+        isr_flags = self.get_as_priv(0, 8, isr_base + int_n * 16)
+        handler = self.get_as_priv(0, 8, isr_base + int_n * 16 + 8)
+        if handler == 0:
+            raise Exception(
+                "interrupt %u (%s): no handler registered (ISR entry handler == 0)"
+                % (int_n, INT_LST[int_n])
+            )
+        isr_priv = (isr_flags >> 8) & 1  # privilege level for this handler
+
+        # Save caller's stack pointer, then switch to the ISR privilege's stack
+        self.sys_regs[SVSRB_SP + self.priv_lvl] = self.sp
+        self.sp = self.sys_regs[SVSRB_SP + isr_priv]
+
+        # Push v3 frame (user_ip first -> highest address = bp+40 after all pushes)
+        self.push(8, user_ip)  # bp+40
+        self.push(8, user_sp)  # bp+32
+        self.push(8, user_bp)  # bp+24
+        self.push(8, saved_flags)  # bp+16
+        self.push(8, error_code)  # bp+8
+        self.push(8, int_n)  # bp+0  <- TOS
         self.bp = self.sp
+
+        # Apply ISR flags: sets priv_lvl, priority, virt_mem_mode
+        self.set_flags(isr_flags)
+
+        self.ip = handler
 
     def switch_to_interrupt_direct(
         self,
         int_n: int,
-        arg0: int,
-        arg1: int,
-        arg2: int,
-        arg3: int,
-        target_hyper: bool = False,
+        error_code: int = 0,
+        arg0: int = 0,
+        arg1: int = 0,
+        arg2: int = 0,
     ):
-        old_ip = self.ip
-        old_bp = self.bp
-        old_sp = self.sp
-        self.sys_regs[SVSRB_SP | self.priv_lvl] = old_sp
-        isr_ptr_k = self.sys_regs[SVSR_KERNEL_ISR]
-        isr_ptr_h = self.sys_regs[SVSR_HYPER_ISR]
-        assert isr_ptr_k & 0x7FF == 0, "expected isr table to be aligned to 2048 bytes"
-        assert isr_ptr_h & 0x7FF == 0, "expected isr table to be aligned to 2048 bytes"
-        isr_tgt = (
-            0
-            if self.priv_lvl != 0 and isr_ptr_k == 0 and not target_hyper
-            else self.get_as_priv(1, 8, isr_ptr_k | (int_n << 3))
-        )
-        isr_priv = 1
-        if isr_tgt == 0 and isr_ptr_h != 0:
-            isr_tgt = self.get_as_priv(0, 8, isr_ptr_h | (int_n << 3))
-            isr_priv = 0
-        if isr_tgt == 0 or isr_priv < self.virtual_syscalls_lvl:
-            return
-        old_flags = self.sys_regs[SVSR_FLAGS]
-        self.set_flags_pri_priv(self.priority, isr_priv)
-        self.sp = self.sys_regs[SVSRB_SP | isr_priv]
-        self.push(8, arg3)
-        self.push(8, arg2)
-        self.push(8, arg1)
-        self.push(8, arg0)
-        self.push(
-            8, old_flags
-        )  # TODO: note that these flags will be checked to prevent privilege escalation
-        self.push(8, old_bp)
-        self.push(8, old_ip)
-        self.ip = isr_tgt
-        self.bp = self.sp
-        # TODO: if this is the last interrupt being handled then the return instruction acts like a sysret
-        # TODO:   if not then the return instruction acts like a regular return
+        """
+        Trigger an interrupt from within VM logic (e.g. a page fault).
+        Uses the same v3 frame format as switch_to_interrupt.
+        arg0, arg1, arg2 are informational and stored in SVSR regs, not the frame.
+        """
+        self.switch_to_interrupt(int_n, error_code)
 
     def return_from_interrupt(self):
+        """
+        IRET: restore state from the v3 interrupt frame and return to user/kernel code.
+
+        Frame offsets (relative to sp = bp on entry to handler):
+          [sp+0]:  int_num   (discard)
+          [sp+8]:  error_code (discard)
+          [sp+16]: saved_flags
+          [sp+24]: user_bp
+          [sp+32]: user_sp
+          [sp+40]: user_ip
+        """
         sp = self.sp
-        old_ip = self.get(8, sp)
-        old_bp = self.get(8, sp + 8)
-        old_flags = self.get(8, sp + 16)
-        self.reset_stack(56)
-        self.sys_regs[SVSRB_SP | self.priv_lvl] = self.sp
-        if ((old_flags >> 8) & 3) < self.priv_lvl:
-            self.switch_to_interrupt_direct(
-                INT_PROTECT_FAULT, self.ip, old_flags, sp, self.bp, True
-            )
+        # int_num and error_code are discarded on return
+        saved_flags = self.get(8, sp + 16)
+        user_bp = self.get(8, sp + 24)
+        user_sp = self.get(8, sp + 32)
+        user_ip = self.get(8, sp + 40)
+
+        # Prevent privilege escalation: cannot IRET to a higher privilege level (lower number)
+        ret_priv = (saved_flags >> 8) & 1
+        if ret_priv < self.priv_lvl:
+            self.switch_to_interrupt(INT_PROTECT_FAULT, 0)
             return
-        self.set_flags(old_flags)
-        self.bp = old_bp
-        self.ip = old_ip
-        self.sp = self.sys_regs[SVSRB_SP | self.priv_lvl]
+
+        # Save current kernel SP so the next interrupt can resume cleanly
+        self.sys_regs[SVSR_KERNEL_SP] = sp + 48
+
+        # Restore user state
+        self.set_flags(saved_flags)  # restores priv_lvl, priority, virt_mem_mode
+        self.bp = user_bp
+        self.sp = user_sp
+        self.ip = user_ip
 
     def debug(self, brk_points):
         get_instr_dat = self.get_instr_dat
@@ -2476,9 +2910,7 @@ class VirtualMachine(object):
                 else:
                     raise
             if apic.int_ready:
-                self.switch_to_interrupt_direct(
-                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
-                )
+                self.switch_to_interrupt_direct(apic.which_int, apic.arg0)
         return False
 
     def step(self):

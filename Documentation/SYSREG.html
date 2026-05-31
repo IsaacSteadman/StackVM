@@ -105,6 +105,38 @@
         <td>Top Level User Page Table Pointer (TLPTR &mdash; holds a pointer to the first-level page table PT1, not an entry in any table)</td>
         <td>V5 or greater</td>
       </tr>
+      <tr>
+        <td>0x0A</td>
+        <td>CORE_ID</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Read-only hardware core identifier (0-based index). Used to identify which physical processor core is executing.</td>
+        <td>V5 or greater</td>
+      </tr>
+      <tr>
+        <td>0x0B</td>
+        <td>IPI</td>
+        <td>None</td>
+        <td>Kernel</td>
+        <td>Write-only inter-processor interrupt register. Writing triggers an IPI to the core whose id matches the written value.</td>
+        <td>V5 or greater</td>
+      </tr>
+      <tr>
+        <td>0x0C</td>
+        <td>CYCLE_COUNT</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Read-only hardware cycle counter. Monotonically increasing; wraps on overflow. Useful for performance measurement.</td>
+        <td>V5 or greater</td>
+      </tr>
+      <tr>
+        <td>0x0D</td>
+        <td>PAGE_FAULT_ADDR</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Read-only virtual address of the most recent page fault. Valid only inside a PAGE_FAULT interrupt handler.</td>
+        <td>V5 or greater</td>
+      </tr>
     </tbody>
   </table>
   <h3 id="SYSREG_FLAGS">SYSREG: FLAGS</h3>
@@ -390,17 +422,37 @@
     virtual address to physical address translation and cache line alignment
   </p>
   <p>
-    When interrupt code n is triggered the processor looks up the entry in
-    <pre>uint64_t flags = ((uint64_t *)SYSREG_ISR)[2 * n];
-uint64_t addr = ((uint64_t *)SYSREG_ISR)[2 * n + 1];
-uint64_t old_flags = SYSREG_FLAGS;
-SYSREG_FLAGS = flags;
-// interrupt_startup(old_flags)
-// JMP addr</pre>
-    the entire "switch to interrupt" process is atomic so if the flags for
-    an interrupt disables interrupts then the execution of that interrupt
-    service routine will not be interruptable (useful for interrupts like
-    pagefault)
+    When interrupt code n is triggered the processor reads the ISR table entry
+    and builds a 48-byte interrupt frame on the ISR privilege's stack:
+    <pre>uint64_t isr_flags = ((uint64_t *)SYSREG_ISR)[2 * n];
+uint64_t addr      = ((uint64_t *)SYSREG_ISR)[2 * n + 1];
+uint8_t  isr_priv  = (isr_flags >> 8) &amp; 1;
+
+/* Save caller stack pointer; switch to ISR privilege stack */
+SYSREG[SVSRB_SP + current_priv] = SP;
+SP = SYSREG[SVSRB_SP + isr_priv];
+
+/* Push v3 48-byte interrupt frame (bp = sp after) */
+push(user_ip);      /* [bp+40] */
+push(user_sp);      /* [bp+32] */
+push(user_bp);      /* [bp+24] */
+push(saved_flags);  /* [bp+16] */
+push(error_code);   /* [bp+8]  */
+push(int_num);      /* [bp+0]  &lt;- TOS */
+BP = SP;
+
+/* Apply ISR entry flags: sets privilege, priority mask, virt_mem_mode */
+SYSREG_FLAGS = isr_flags;
+JMP addr;</pre>
+    The isr_flags field follows the same bit layout as SYSREG_FLAGS.  Setting
+    bit 8 (priv=0) causes the handler to run at kernel privilege.  Setting the
+    priority field (bits 7:0) masks out lower-priority interrupts during the
+    handler.  The entire "switch to interrupt" sequence is atomic.
+  </p>
+  <p>
+    Return from an interrupt handler is performed with
+    <code>RET_E (IS_SYS=1, IS_INT=1)</code> (IRET), which unwinds the 48-byte
+    frame and restores FLAGS, BP, SP, and IP.
   </p>
   <div style="width:100%;height:100vh"></div>
   <script>
