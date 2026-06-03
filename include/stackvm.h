@@ -1,5 +1,5 @@
 /*
- * stackvm.h — Core StackVM types and syscall ABI.
+ * stackvm.h - Core StackVM types and syscall ABI.
  *
  * Include this header in every program targeting the StackVM runtime.
  * It provides the fundamental integer types and the raw syscall function.
@@ -43,7 +43,7 @@ typedef int64_t ptrdiff_t;
 #endif
 
 /*
- * Raw syscall — invoked by the CALL_E / BCCE_SYSCALL mechanism.
+ * Raw syscall - invoked by the CALL_E / BCCE_SYSCALL mechanism.
  * Do NOT call this directly; use the typed wrappers in the appropriate
  * stackvm_*.h header instead.
  */
