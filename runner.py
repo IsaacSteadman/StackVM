@@ -160,9 +160,26 @@ def _load_debugger():
 
 _SVC_MAGIC = b"\xf7SVE\0\0\0\0"
 _SVC_SPARSE_MAGIC = b"\xf7SVE\0\0\0\1"
+_SVC_RELOC_MAGIC = b"\xf7SVE\0\0\0\2"
 
 
-def load_sbc(path: str) -> Tuple[bytearray, int, int]:
+def _apply_base_fixups(
+    memory: bytearray,
+    base_relocations: List[int],
+    base_delta: int,
+) -> None:
+    if base_delta == 0:
+        return
+    mask = (1 << 64) - 1
+    for offset in base_relocations:
+        value = int.from_bytes(memory[offset : offset + 8], "little")
+        memory[offset : offset + 8] = ((value + base_delta) & mask).to_bytes(
+            8,
+            "little",
+        )
+
+
+def load_sbc(path: str, base_delta: int = 0) -> Tuple[bytearray, int, int]:
     """Load a .sbc binary file.
 
     Sparse executables omit a trailing zero-filled region, which is allocated here.
@@ -173,18 +190,48 @@ def load_sbc(path: str) -> Tuple[bytearray, int, int]:
     """
     with open(path, "rb") as fl:
         magic = fl.read(8)
-        if magic not in {_SVC_MAGIC, _SVC_SPARSE_MAGIC}:
+        if magic not in {_SVC_MAGIC, _SVC_SPARSE_MAGIC, _SVC_RELOC_MAGIC}:
             raise ValueError(
                 f"Invalid .sbc magic: expected {_SVC_MAGIC!r} or "
-                f"{_SVC_SPARSE_MAGIC!r}, got {magic!r}"
+                f"{_SVC_SPARSE_MAGIC!r} or {_SVC_RELOC_MAGIC!r}, got {magic!r}"
             )
-        header = fl.read(24)
-        if len(header) != 24:
-            raise ValueError("Binary file too short to contain a valid header")
-        code_segment_end, data_segment_start, total_memory_length = _struct.unpack(
-            "<QQQ", header
-        )
-        memory = bytearray(fl.read())
+        if magic == _SVC_RELOC_MAGIC:
+            header = fl.read(40)
+            if len(header) != 40:
+                raise ValueError(
+                    "Binary file too short to contain a valid relocation header"
+                )
+            (
+                code_segment_end,
+                data_segment_start,
+                total_memory_length,
+                file_size,
+                relocation_count,
+            ) = _struct.unpack("<QQQQQ", header)
+            if file_size > total_memory_length:
+                raise ValueError(
+                    f"Binary file payload exceeds memory size: expected at most "
+                    f"{total_memory_length} bytes, got {file_size}"
+                )
+            memory = bytearray(fl.read(file_size))
+            relocation_data = fl.read(relocation_count * 8)
+            if len(relocation_data) != relocation_count * 8:
+                raise ValueError("Binary file relocation table is truncated")
+            if fl.read(1):
+                raise ValueError("Binary file has trailing data")
+            base_relocations = [
+                int.from_bytes(relocation_data[index * 8 : index * 8 + 8], "little")
+                for index in range(relocation_count)
+            ]
+        else:
+            header = fl.read(24)
+            if len(header) != 24:
+                raise ValueError("Binary file too short to contain a valid header")
+            code_segment_end, data_segment_start, total_memory_length = _struct.unpack(
+                "<QQQ", header
+            )
+            memory = bytearray(fl.read())
+            base_relocations = []
     if magic == _SVC_MAGIC and len(memory) != total_memory_length:
         raise ValueError(
             f"Binary file truncated: expected {total_memory_length} bytes, "
@@ -197,4 +244,5 @@ def load_sbc(path: str) -> Tuple[bytearray, int, int]:
             f"got {len(memory)}"
         )
     memory.extend([0] * (total_memory_length - len(memory)))
+    _apply_base_fixups(memory, base_relocations, base_delta)
     return memory, code_segment_end, data_segment_start
