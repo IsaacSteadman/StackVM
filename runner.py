@@ -159,10 +159,13 @@ def _load_debugger():
 # ---------------------------------------------------------------------------
 
 _SVC_MAGIC = b"\xf7SVE\0\0\0\0"
+_SVC_SPARSE_MAGIC = b"\xf7SVE\0\0\0\1"
 
 
 def load_sbc(path: str) -> Tuple[bytearray, int, int]:
     """Load a .sbc binary file.
+
+    Sparse executables omit a trailing zero-filled region, which is allocated here.
 
     Returns
     -------
@@ -170,9 +173,10 @@ def load_sbc(path: str) -> Tuple[bytearray, int, int]:
     """
     with open(path, "rb") as fl:
         magic = fl.read(8)
-        if magic != _SVC_MAGIC:
+        if magic not in {_SVC_MAGIC, _SVC_SPARSE_MAGIC}:
             raise ValueError(
-                f"Invalid .sbc magic: expected {_SVC_MAGIC!r}, got {magic!r}"
+                f"Invalid .sbc magic: expected {_SVC_MAGIC!r} or "
+                f"{_SVC_SPARSE_MAGIC!r}, got {magic!r}"
             )
         header = fl.read(24)
         if len(header) != 24:
@@ -180,10 +184,17 @@ def load_sbc(path: str) -> Tuple[bytearray, int, int]:
         code_segment_end, data_segment_start, total_memory_length = _struct.unpack(
             "<QQQ", header
         )
-        memory = bytearray(fl.read(total_memory_length))
-    if len(memory) != total_memory_length:
+        memory = bytearray(fl.read())
+    if magic == _SVC_MAGIC and len(memory) != total_memory_length:
         raise ValueError(
             f"Binary file truncated: expected {total_memory_length} bytes, "
             f"got {len(memory)}"
         )
+    if len(memory) > total_memory_length:
+        raise ValueError(
+            f"Binary file payload exceeds memory size: expected at most "
+            f"{total_memory_length} bytes, "
+            f"got {len(memory)}"
+        )
+    memory.extend([0] * (total_memory_length - len(memory)))
     return memory, code_segment_end, data_segment_start
