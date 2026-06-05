@@ -656,6 +656,10 @@ public:
         virt_syscall(virt_syscall),
         virt_mem_mode(0)
   {
+    for (uint64_t &reg : sys_regs)
+    {
+      reg = 0;
+    }
     calc_flags();
   }
   void set_memory(uint8_t *mem, size_t size)

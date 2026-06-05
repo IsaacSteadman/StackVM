@@ -1285,7 +1285,10 @@ def vm_store(vm_inst):
     elif typ == BCR_SYSREG:
         which = vm_inst.get_instr_dat(1)
         reg_v = vm_inst.pop(8)
-        vm_inst.sys_regs[which] = reg_v
+        if which == SVSR_IPI:
+            vm_inst.send_ipi(reg_v)
+        else:
+            vm_inst.sys_regs[which] = reg_v
         if which == SVSR_FLAGS:  # v3: FLAGS is at 0x00
             vm_inst.priv_lvl = (reg_v >> 8) & 1
             vm_inst.priority = reg_v & 0xFF
@@ -1912,6 +1915,8 @@ class VirtualMachine(object):
         self.objects = ObjectIdAllocator(0, 1 << 64)
         self.pyg_index = -1
         self.apic = None
+        self.ipi_log = []
+        self.ipi_controller = None
         self.virt_mem_mode = VM_DISABLED
         self.virt_error_code = VME_NONE
         self.dbg_walk_page = False
@@ -1932,6 +1937,21 @@ class VirtualMachine(object):
         self._tlb_inv_tlptr = 0
         self._tlb_inv_base = 0
         self._tlb_inv_size = 0
+
+    def set_core_id(self, core_id: int):
+        self.sys_regs[SVSR_CORE_ID] = int(core_id)
+
+    def send_ipi(self, value: int):
+        value = int(value) & ((1 << 64) - 1)
+        self.sys_regs[SVSR_IPI] = value
+        target_core_id = value & 0xFF
+        irq = (value >> 8) & 0xFF
+        if self.ipi_controller is not None:
+            self.ipi_controller.send_ipi(self, target_core_id, irq, value)
+        elif self.apic is not None and target_core_id == self.sys_regs[SVSR_CORE_ID]:
+            self.apic.trigger(irq, self.sys_regs[SVSR_CORE_ID], value)
+        else:
+            self.ipi_log.append((target_core_id, irq, value))
 
     def check_perm_set_or_clr_error(
         self,
