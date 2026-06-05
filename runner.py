@@ -161,6 +161,7 @@ def _load_debugger():
 _SVC_MAGIC = b"\xf7SVE\0\0\0\0"
 _SVC_SPARSE_MAGIC = b"\xf7SVE\0\0\0\1"
 _SVC_RELOC_MAGIC = b"\xf7SVE\0\0\0\2"
+_SVC_DEBUG_MAGIC = b"\xf7SVE\0\0\0\3"
 
 
 def _apply_base_fixups(
@@ -190,10 +191,16 @@ def load_sbc(path: str, base_delta: int = 0) -> Tuple[bytearray, int, int]:
     """
     with open(path, "rb") as fl:
         magic = fl.read(8)
-        if magic not in {_SVC_MAGIC, _SVC_SPARSE_MAGIC, _SVC_RELOC_MAGIC}:
+        if magic not in {
+            _SVC_MAGIC,
+            _SVC_SPARSE_MAGIC,
+            _SVC_RELOC_MAGIC,
+            _SVC_DEBUG_MAGIC,
+        }:
             raise ValueError(
                 f"Invalid .sbc magic: expected {_SVC_MAGIC!r} or "
-                f"{_SVC_SPARSE_MAGIC!r} or {_SVC_RELOC_MAGIC!r}, got {magic!r}"
+                f"{_SVC_SPARSE_MAGIC!r} or {_SVC_RELOC_MAGIC!r} or "
+                f"{_SVC_DEBUG_MAGIC!r}, got {magic!r}"
             )
         if magic == _SVC_RELOC_MAGIC:
             header = fl.read(40)
@@ -217,6 +224,39 @@ def load_sbc(path: str, base_delta: int = 0) -> Tuple[bytearray, int, int]:
             relocation_data = fl.read(relocation_count * 8)
             if len(relocation_data) != relocation_count * 8:
                 raise ValueError("Binary file relocation table is truncated")
+            if fl.read(1):
+                raise ValueError("Binary file has trailing data")
+            base_relocations = [
+                int.from_bytes(relocation_data[index * 8 : index * 8 + 8], "little")
+                for index in range(relocation_count)
+            ]
+        elif magic == _SVC_DEBUG_MAGIC:
+            header = fl.read(56)
+            if len(header) != 56:
+                raise ValueError("Binary file too short to contain a valid debug header")
+            (
+                code_segment_end,
+                data_segment_start,
+                total_memory_length,
+                file_size,
+                relocation_count,
+                debug_size,
+                reserved,
+            ) = _struct.unpack("<QQQQQQQ", header)
+            if reserved != 0:
+                raise ValueError("Binary file debug header reserved field must be zero")
+            if file_size > total_memory_length:
+                raise ValueError(
+                    f"Binary file payload exceeds memory size: expected at most "
+                    f"{total_memory_length} bytes, got {file_size}"
+                )
+            memory = bytearray(fl.read(file_size))
+            relocation_data = fl.read(relocation_count * 8)
+            if len(relocation_data) != relocation_count * 8:
+                raise ValueError("Binary file relocation table is truncated")
+            debug_data = fl.read(debug_size)
+            if len(debug_data) != debug_size:
+                raise ValueError("Binary file debug section is truncated")
             if fl.read(1):
                 raise ValueError("Binary file has trailing data")
             base_relocations = [
