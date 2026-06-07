@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM | Thread-Local Storage ABI</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>Thread-Local Storage (TLS) ABI</h1>
+    <p>
+      IsaacCompiler supports the C11 <code>_Thread_local</code> storage-class
+      specifier and its GNU spelling <code>__thread</code>. A thread-local
+      object has <em>thread storage duration</em>: a distinct instance exists per
+      thread, created when the thread starts and destroyed when it ends. This
+      page documents the on-target ABI the compiler emits and that a kernel /
+      dynamic loader is expected to honour. The libc and dynamic loader
+      themselves are out of scope; this page is the contract they target.
+    </p>
+
+    <h2>Model: static / local-exec</h2>
+    <p>
+      The compiler emits the classic <strong>static (local-exec)</strong> TLS
+      model. There is no per-object indirection through a GOT or a
+      <code>__tls_get_addr</code> dynamic-resolver call: every thread-local has a
+      fixed, link-time-constant offset within the thread's TLS block. (A
+      general-dynamic model layered on the C3 dynamic-linking ABI can be added
+      later without changing the layout described here.)
+    </p>
+
+    <h2>The TLS template</h2>
+    <p>
+      All thread-local objects are emitted into a dedicated output section,
+      <code>.tdata</code>. The linker lays this section out contiguously to form
+      the <strong>TLS template</strong> &mdash; the initialisation image that a
+      loader copies into every thread's TLS block. Zero-initialised
+      thread-locals are emitted as explicit zero bytes in the template; a
+      separate <code>.tbss</code> optimisation may be layered on later without
+      changing the generated code.
+    </p>
+    <p>The linker defines the following symbols describing the template:</p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Meaning</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>__tls_template_start</code></td>
+          <td>Address of the first byte of the TLS template.</td>
+        </tr>
+        <tr>
+          <td><code>__tls_template_end</code></td>
+          <td>Address one past the last byte of the template.</td>
+        </tr>
+        <tr>
+          <td><code>__tls_size</code></td>
+          <td>Size of the template in bytes (the per-thread TLS block size).</td>
+        </tr>
+        <tr>
+          <td><code>__tls_align</code></td>
+          <td>Required alignment of a thread's TLS block.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>The thread pointer: SVSR_TLS_BASE</h2>
+    <p>
+      The per-thread base address is held in the system register
+      <a href="SYSREG.html">TLS_BASE (0x12)</a>. It is readable from user mode
+      (TLS-relative loads execute in user code) and written by the kernel /
+      loader on context switch. A thread-local object <code>x</code> is addressed
+      at runtime as:
+    </p>
+    <pre>
+&amp;x_runtime = SVSR_TLS_BASE + (&amp;x_in_template - __tls_template_start)
+</pre>
+    <p>
+      i.e. the object's link-time offset within the template, biased by the
+      current thread's base. The compiler emits this address computation
+      directly in front of every load, store, array-decay or member access of a
+      thread-local; the bytecode sequence (see
+      <code>code_gen/tls.py</code> <code>TlsLink.emit_lea</code>) is:
+    </p>
+    <pre>
+LOAD  EA_R_IP, &amp;x                ; absolute template address of x
+LOAD  EA_R_IP, __tls_template_start
+SUB8                             ; offset = &amp;x - template_start
+LOAD  SYSREG, TLS_BASE           ; current thread pointer
+ADD8                             ; runtime address in this thread's block
+</pre>
+
+    <h2>Loader / runtime responsibilities</h2>
+    <ol>
+      <li>
+        For each thread, allocate a block of at least <code>__tls_size</code>
+        bytes aligned to <code>__tls_align</code>.
+      </li>
+      <li>
+        Copy the <code>__tls_size</code> bytes starting at
+        <code>__tls_template_start</code> into the block (this initialises the
+        thread's copies of all <code>.tdata</code> values).
+      </li>
+      <li>
+        Set <code>SVSR_TLS_BASE</code> to the block's base address before running
+        thread code, and restore it on every context switch.
+      </li>
+    </ol>
+    <p>
+      A single-threaded program with no loader may simply set
+      <code>SVSR_TLS_BASE = __tls_template_start</code>, in which case the
+      template doubles as the live storage for the one thread.
+    </p>
+
+    <h2>Source-level usage</h2>
+    <pre>
+_Thread_local int errno_like;     /* C11 spelling */
+__thread int per_thread_counter;  /* GNU spelling (preprocessed to _Thread_local) */
+static __thread int cached;       /* internal linkage, thread storage duration */
+</pre>
+    <p>
+      The <code>restrict</code> qualifier (and its GNU spellings
+      <code>__restrict</code> / <code>__restrict__</code>) is accepted and parsed
+      but otherwise ignored, as it only constrains aliasing for the optimizer.
+    </p>
+  </body>
+</html>

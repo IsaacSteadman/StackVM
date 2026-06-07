@@ -264,6 +264,12 @@ SVSR_INT_ARG0 = 0x0E
 SVSR_INT_ARG1 = 0x0F
 SVSR_INT_ARG2 = 0x10
 SVSR_INT_ARG3 = 0x11
+# Thread-pointer register for the userspace TLS ABI.  Holds the base address of
+# the current thread's TLS block; a thread-local variable lives at
+# TLS_BASE + (its offset within the TLS template).  Readable from user mode (the
+# compiler emits TLS-relative loads in user code); written by the kernel/loader
+# on context switch.  See Documentation/ThreadLocalStorage.html.
+SVSR_TLS_BASE = 0x12
 
 StackVM_SVSR_Codes = {
     # v3 two-privilege-level layout
@@ -285,6 +291,7 @@ StackVM_SVSR_Codes = {
     "INT_ARG1": SVSR_INT_ARG1,
     "INT_ARG2": SVSR_INT_ARG2,
     "INT_ARG3": SVSR_INT_ARG3,
+    "TLS_BASE": SVSR_TLS_BASE,
 }
 
 INT_DIV_BY_ZERO = 0x00
@@ -2045,7 +2052,7 @@ class VirtualMachine(object):
 
     def __init__(self, heap_sz=16384, stack_sz=4096):
         self.api = InterruptApi()
-        self.sys_regs = array.array("Q", [0] * 18)
+        self.sys_regs = array.array("Q", [0] * 19)
         self.priority = 255
         self.priv_lvl = 1
         self.sys_regs[SVSR_FLAGS] = self.priority | (self.priv_lvl << 8)

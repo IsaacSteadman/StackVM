@@ -296,7 +296,8 @@ enum StackVM_SVSR
   SVSR_INT_ARG0 = 0x0E,
   SVSR_INT_ARG1 = 0x0F,
   SVSR_INT_ARG2 = 0x10,
-  SVSR_INT_ARG3 = 0x11
+  SVSR_INT_ARG3 = 0x11,
+  SVSR_TLS_BASE = 0x12 // R/user thread pointer for the TLS ABI; W/kernel
 };
 
 // INT128 sub-operation codes (byte following BC_INT128 opcode)
@@ -651,6 +652,7 @@ const uint8_t SVSR_REGISTER_PERMS[] = {
     0b0001, // 0x0F INT_ARG1 (R/kernel only)
     0b0001, // 0x10 INT_ARG2 (R/kernel only)
     0b0001, // 0x11 INT_ARG3 (R/kernel only)
+    0b0111, // 0x12 TLS_BASE (R/user+kernel, W/kernel)
 };
 
 const uint64_t SVSR_FLAGS_ILLEGAL_BITS_WRITE_MASK[] = {
@@ -670,7 +672,7 @@ protected:
   bool vaddr_msb_eq_priv;
   uint8_t virt_mem_mode;
   uint64_t virt_error_data[4]; // virt_error_data[0] & 0xFF is the virt_error_code
-  uint64_t sys_regs[18];
+  uint64_t sys_regs[19];
   BaseStackVM_Env *env;
   // ---- Software TLB ---------------------------------------------------------
   // Key: (tlptr, page_aligned_vaddr).  Value: (phys_page_base, validated mask).

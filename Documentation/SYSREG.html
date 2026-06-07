@@ -175,6 +175,21 @@
         <td>Read-only interrupt argument 3 (see INT_ARG0).</td>
         <td>V6 or greater</td>
       </tr>
+      <tr>
+        <td>0x12</td>
+        <td>TLS_BASE</td>
+        <td>User &amp; Kernel</td>
+        <td>Kernel</td>
+        <td>
+          Thread pointer for the userspace TLS ABI. Holds the base address of
+          the current thread's TLS block; the compiler addresses a thread-local
+          object as TLS_BASE + (its offset within the TLS template). User code
+          may read it (TLS-relative loads run in user mode); the kernel/loader
+          writes it on context switch. See
+          <a href="ThreadLocalStorage.html">ThreadLocalStorage.html</a>.
+        </td>
+        <td>V6 or greater</td>
+      </tr>
     </tbody>
   </table>
   <p>
