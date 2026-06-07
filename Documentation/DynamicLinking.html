@@ -1,0 +1,226 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM ABI Documentation | Dynamic Linking &amp; Linker Features</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>Dynamic Linking &amp; Kernel Linker Features (Workstream C3)</h1>
+    <p>
+      This page documents the linker capabilities the StackVM toolchain provides
+      for building a Linux-style kernel and a dynamically-linked userspace: the
+      static-linker features (<code>--gc-sections</code>, <code>--build-id</code>,
+      <code>--emit-relocs</code>, <code>--whole-archive</code>, symbol-version
+      scripts, and ELF linker scripts) and the <strong>dynamic-linking ABI</strong>
+      (PLT/GOT model, dynamic relocations, the <code>DT_*</code> contract, and the
+      <code>-shared</code>/<code>-pie</code> output format). The ELF interchange
+      format itself is described alongside the object/executable APIs; this page
+      builds on the <code>EM_STACKVM</code> machine (0x5356) and the base
+      relocation types <code>R_STACKVM_64</code> / <code>R_STACKVM_PC64</code> /
+      <code>R_STACKVM_RELATIVE</code> defined there.
+    </p>
+
+    <h2>Static linker features</h2>
+
+    <h3><code>--gc-sections</code></h3>
+    <p>
+      Garbage-collects input sections that are not reachable from a set of
+      <em>roots</em> by following relocation edges (a relocation in a live section
+      to a symbol defined in section <em>S</em> keeps <em>S</em> live). The roots
+      are:
+    </p>
+    <ul>
+      <li>the section that defines the <strong>entry symbol</strong>
+        (<code>-e</code>/<code>--entry</code>, default <code>_start</code>);</li>
+      <li>sections that define any symbol named by <code>-u</code>/
+        <code>--undefined</code>;</li>
+      <li><strong>KEEP</strong> sections — <code>.init_array</code> and
+        <code>.fini_array</code> are always kept (the linker synthesises their
+        boundary symbols), plus any pattern named by a <code>KEEP(...)</code>
+        directive in the linker script;</li>
+      <li>every exported global when producing a shared object / PIE
+        (<code>-shared</code>/<code>-pie</code>); and</li>
+      <li>all sections of legacy single-segment objects and all
+        <code>.debug*</code> sections (never collectable).</li>
+    </ul>
+    <p>
+      As with GNU <code>ld</code>, collection is at <em>section</em> granularity:
+      to drop individual unused functions/data the compiler must emit one section
+      per function/datum (the equivalent of <code>-ffunction-sections</code> /
+      <code>-fdata-sections</code>). The list of collected sections is reported in
+      <code>LinkResult.removed_sections</code> and summarised on the
+      <code>link</code> command line.
+    </p>
+
+    <h3><code>--build-id[=style]</code></h3>
+    <p>
+      Emits a <code>.note.gnu.build-id</code> note
+      (<code>NT_GNU_BUILD_ID = 3</code>, owner <code>"GNU"</code>) into the linked
+      ELF. Styles: <code>sha1</code> (default, 20 bytes), <code>md5</code> (16
+      bytes), <code>uuid</code> (16 random bytes), <code>0x&lt;hex&gt;</code> (an
+      explicit id), or <code>none</code> (disabled). The <code>sha1</code>/
+      <code>md5</code> ids are computed over the final image (and its relative
+      relocation offsets) so identical inputs reproduce identical ids. Inspect
+      with <code>readelf -n</code>.
+    </p>
+
+    <h3><code>--emit-relocs</code></h3>
+    <p>
+      Retains the symbolic relocations applied during the link as
+      <code>.rela.text</code> / <code>.rela.data</code> sections in the output ELF
+      (each entry references a <code>.symtab</code> symbol with type
+      <code>R_STACKVM_64</code> or <code>R_STACKVM_PC64</code> and the original
+      addend). This is the input a KASLR-style post-processor or a self-relocating
+      kernel uses to re-fix the image at an arbitrary load base; it complements the
+      <code>R_STACKVM_RELATIVE</code> base-relocation stream (the
+      <code>.rela.dyn</code> already produced for absolute data references).
+    </p>
+
+    <h3><code>--whole-archive</code> / <code>--no-whole-archive</code></h3>
+    <p>
+      Positional toggles: archives listed while <code>--whole-archive</code> is in
+      effect contribute <em>every</em> member to the link (as if the members had
+      been listed individually), rather than only the members that resolve an
+      outstanding undefined symbol. <code>--no-whole-archive</code> restores the
+      default on-demand extraction. This is how kbuild links
+      <code>built-in.a</code>.
+    </p>
+
+    <h3>Symbol-version scripts (<code>--version-script</code>)</h3>
+    <p>
+      A constrained GNU version-script grammar is supported:
+    </p>
+    <pre>
+VERS_1.0 {
+  global: api_*; init_module;
+  local:  *;
+};
+VERS_1.1 { global: new_api; } VERS_1.0;</pre>
+    <p>
+      Named and anonymous nodes, <code>global:</code>/<code>local:</code> blocks
+      with plain names or glob patterns, and <code>} PARENT;</code> dependencies
+      parse. A symbol matched by a <code>local:</code> pattern and <em>not</em> by
+      any <code>global:</code> pattern is <strong>localized</strong> (its binding
+      becomes <code>LOCAL</code> and it is removed from the exported global / dynamic
+      symbol table). The associated version name is available via
+      <code>version_for()</code> for future versioned-symbol emission. Localized
+      symbols are reported in <code>LinkResult.localized_symbols</code>.
+    </p>
+
+    <h3>ELF linker scripts (<code>vmlinux.lds</code>)</h3>
+    <p>
+      In addition to the output-section ordering, the script parser recognises
+      <code>ENTRY(symbol)</code> (used as the default <code>--gc-sections</code>
+      entry root) and <code>KEEP(*(pattern))</code> directives (whose patterns
+      become GC roots).
+    </p>
+
+    <h2>Dynamic-linking ABI</h2>
+    <p>
+      A shared object or PIE is an <code>ET_DYN</code> ELF. The dynamic metadata
+      lives in a dedicated read/write <code>PT_LOAD</code> segment placed after the
+      data segment, with a <code>PT_DYNAMIC</code> program header pointing at
+      <code>.dynamic</code>. The object exports its global symbols through
+      <code>.dynsym</code>/<code>.dynstr</code> with a SysV <code>.hash</code>
+      table, and carries its load-base relocations in <code>.rela.dyn</code>.
+    </p>
+
+    <h3>Relocation types</h3>
+    <table class="Isaac-Table">
+      <thead>
+        <tr><th>Name</th><th>Value</th><th>Calculation</th><th>Use</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>R_STACKVM_NONE</code></td><td>0</td><td>—</td><td>no-op / padding</td></tr>
+        <tr><td><code>R_STACKVM_64</code></td><td>1</td><td><code>S + A</code></td><td>absolute 64-bit</td></tr>
+        <tr><td><code>R_STACKVM_PC64</code></td><td>2</td><td><code>S + A - (P + 8)</code></td><td>PC-relative 64-bit (relative to the end of the 8-byte field)</td></tr>
+        <tr><td><code>R_STACKVM_RELATIVE</code></td><td>3</td><td><code>B + A</code></td><td>load-base rebase (no symbol); the dynamic-loader fast path</td></tr>
+        <tr><td><code>R_STACKVM_GLOB_DAT</code></td><td>4</td><td><code>S</code></td><td>write a resolved symbol value into a GOT slot</td></tr>
+        <tr><td><code>R_STACKVM_JUMP_SLOT</code></td><td>5</td><td><code>S</code></td><td>write a resolved function address into a PLT/GOT slot (lazy or eager)</td></tr>
+        <tr><td><code>R_STACKVM_COPY</code></td><td>6</td><td>copy</td><td>copy initialised data from a shared object into the executable at load time</td></tr>
+      </tbody>
+    </table>
+    <p>
+      <code>S</code> = symbol value, <code>A</code> = addend, <code>P</code> =
+      address of the patched field, <code>B</code> = the load base
+      (<code>actual_base − link_base</code>).
+    </p>
+
+    <h3>PLT / GOT model</h3>
+    <p>
+      Position-independent code reaches external data and functions indirectly
+      through a Global Offset Table (<code>.got</code>) and Procedure Linkage Table
+      (<code>.plt</code>):
+    </p>
+    <ul>
+      <li>Each imported <strong>data</strong> object gets a <code>.got</code> slot
+        fixed up by an <code>R_STACKVM_GLOB_DAT</code> dynamic relocation; PIC reads
+        the address from the slot rather than embedding it.</li>
+      <li>Each imported <strong>function</strong> gets a <code>.plt</code> stub
+        whose <code>.got.plt</code> slot is fixed up by an
+        <code>R_STACKVM_JUMP_SLOT</code> relocation. Eager binding resolves all
+        slots at load; lazy binding leaves the slot pointing at the loader's
+        resolver trampoline (reachable via <code>DT_PLTGOT</code>) which resolves
+        on first call.</li>
+      <li>The <code>R_STACKVM_RELATIVE</code> stream rebases all internal absolute
+        pointers in one pass — this is the only relocation the kernel's early
+        self-relocator needs.</li>
+    </ul>
+
+    <h3><code>.dynamic</code> entries (<code>DT_*</code>)</h3>
+    <p>
+      The loader reads the <code>.dynamic</code> array (8-byte tag + 8-byte
+      value, terminated by <code>DT_NULL</code>) to find every other table.
+    </p>
+    <table class="Isaac-Table">
+      <thead><tr><th>Tag</th><th>Value</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>DT_NULL</code></td><td>0</td><td>end of the array</td></tr>
+        <tr><td><code>DT_NEEDED</code></td><td>1</td><td><code>.dynstr</code> offset of a required library name</td></tr>
+        <tr><td><code>DT_PLTRELSZ</code></td><td>2</td><td>size in bytes of the PLT relocations</td></tr>
+        <tr><td><code>DT_PLTGOT</code></td><td>3</td><td>address of <code>.got.plt</code> (loader resolver hook)</td></tr>
+        <tr><td><code>DT_HASH</code></td><td>4</td><td>address of the SysV symbol hash table</td></tr>
+        <tr><td><code>DT_STRTAB</code></td><td>5</td><td>address of <code>.dynstr</code></td></tr>
+        <tr><td><code>DT_SYMTAB</code></td><td>6</td><td>address of <code>.dynsym</code></td></tr>
+        <tr><td><code>DT_RELA</code></td><td>7</td><td>address of the RELA relocation table</td></tr>
+        <tr><td><code>DT_RELASZ</code></td><td>8</td><td>size in bytes of the RELA table</td></tr>
+        <tr><td><code>DT_RELAENT</code></td><td>9</td><td>size of one RELA entry (24)</td></tr>
+        <tr><td><code>DT_STRSZ</code></td><td>10</td><td>size in bytes of <code>.dynstr</code></td></tr>
+        <tr><td><code>DT_SYMENT</code></td><td>11</td><td>size of one symbol entry (24)</td></tr>
+        <tr><td><code>DT_INIT</code> / <code>DT_FINI</code></td><td>12 / 13</td><td>module init / finalise entry points</td></tr>
+        <tr><td><code>DT_SONAME</code></td><td>14</td><td><code>.dynstr</code> offset of this object's canonical name</td></tr>
+        <tr><td><code>DT_JMPREL</code></td><td>23</td><td>address of the PLT relocations</td></tr>
+        <tr><td><code>DT_INIT_ARRAY</code> / <code>DT_FINI_ARRAY</code></td><td>25 / 26</td><td>arrays of init / finalise function pointers</td></tr>
+        <tr><td><code>DT_INIT_ARRAYSZ</code> / <code>DT_FINI_ARRAYSZ</code></td><td>27 / 28</td><td>byte sizes of those arrays</td></tr>
+        <tr><td><code>DT_FLAGS</code></td><td>30</td><td>capability flags</td></tr>
+        <tr><td><code>DT_FLAGS_1</code></td><td>0x6FFFFFFB</td><td>state flags; <code>DF_1_PIE</code> (0x08000000) marks a PIE</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Loader contract (informative)</h3>
+    <ol>
+      <li>Map each <code>PT_LOAD</code> segment at <code>vaddr + load_base</code>
+        with the segment's <code>R/W/X</code> permissions.</li>
+      <li>Process <code>R_STACKVM_RELATIVE</code> entries first (rebase) so the
+        dynamic tables become usable.</li>
+      <li>For each <code>DT_NEEDED</code>, recursively load the named object.</li>
+      <li>Resolve <code>R_STACKVM_GLOB_DAT</code> / <code>R_STACKVM_JUMP_SLOT</code>
+        (and any <code>R_STACKVM_COPY</code>) against the global symbol search
+        order, eagerly or lazily via <code>DT_PLTGOT</code>.</li>
+      <li>Run <code>DT_INIT</code> / <code>DT_INIT_ARRAY</code> in dependency
+        order, then transfer control to the executable entry point.</li>
+    </ol>
+    <p>
+      <strong>Status.</strong> The toolchain emits and inspects the full static
+      feature set and the <code>ET_DYN</code> container with
+      <code>.dynsym</code>/<code>.dynstr</code>/<code>.hash</code>/
+      <code>.dynamic</code>/<code>.rela.dyn</code> and the <code>DT_*</code>
+      contract above (verified with <code>readelf -d</code>/<code>-n</code>). The
+      <em>compiler</em> <code>-fPIC</code> GOT/PLT code generation and the
+      <em>runtime</em> dynamic loader in the emulator are intentionally deferred to
+      the dynamic-userspace milestone (E2 step&nbsp;5); this document is the ABI they
+      target.
+    </p>
+  </body>
+</html>
