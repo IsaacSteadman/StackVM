@@ -121,9 +121,24 @@ VERS_1.1 { global: new_api; } VERS_1.0;</pre>
       A shared object or PIE is an <code>ET_DYN</code> ELF. The dynamic metadata
       lives in a dedicated read/write <code>PT_LOAD</code> segment placed after the
       data segment, with a <code>PT_DYNAMIC</code> program header pointing at
-      <code>.dynamic</code>. The object exports its global symbols through
+      <code>.dynamic</code>. The object publishes its global symbols through
       <code>.dynsym</code>/<code>.dynstr</code> with a SysV <code>.hash</code>
       table, and carries its load-base relocations in <code>.rela.dyn</code>.
+    </p>
+    <p>
+      <code>.dynsym</code> records both directions of the link contract: the
+      <strong>defined exports</strong> this object provides (with their owning
+      section and value) and the <strong>undefined imports</strong> it references
+      but does not define. Imports are emitted as <code>STB_GLOBAL</code> /
+      <code>SHN_UNDEF</code> entries with a zero value and are listed in the
+      <code>.hash</code> table so the loader can bind them against the global
+      symbol search order at run time. Because a shared object / PIE defers those
+      references to the loader, undefined symbols are <em>not</em> link-time
+      errors when <code>-shared</code>/<code>-pie</code> is in effect (matching
+      <code>ld</code>'s default). Each <code>DT_NEEDED</code> names a library that
+      is expected to satisfy them. Inspect the dynamic symbol table with
+      <code>readelf --dyn-syms</code> (or <code>readelf -s</code>, which prints
+      both <code>.symtab</code> and <code>.dynsym</code>).
     </p>
 
     <h3>Relocation types</h3>
@@ -216,8 +231,14 @@ VERS_1.1 { global: new_api; } VERS_1.0;</pre>
       feature set and the <code>ET_DYN</code> container with
       <code>.dynsym</code>/<code>.dynstr</code>/<code>.hash</code>/
       <code>.dynamic</code>/<code>.rela.dyn</code> and the <code>DT_*</code>
-      contract above (verified with <code>readelf -d</code>/<code>-n</code>). The
-      <em>compiler</em> <code>-fPIC</code> GOT/PLT code generation and the
+      contract above. <code>.dynsym</code> carries both the defined exports and the
+      <code>SHN_UNDEF</code> imports, the seven <code>R_STACKVM_*</code> relocation
+      types (including <code>GLOB_DAT</code>/<code>JUMP_SLOT</code>/<code>COPY</code>)
+      are defined and recognised by the inspector, and everything is verified with
+      <code>readelf -d</code>/<code>-n</code>/<code>-r</code>/<code>--dyn-syms</code>.
+      The <em>compiler</em> <code>-fPIC</code> GOT/PLT code generation (which is what
+      actually <em>emits</em> <code>GLOB_DAT</code>/<code>JUMP_SLOT</code>
+      relocations and the <code>.plt</code>/<code>.got</code> tables) and the
       <em>runtime</em> dynamic loader in the emulator are intentionally deferred to
       the dynamic-userspace milestone (E2 step&nbsp;5); this document is the ABI they
       target.
