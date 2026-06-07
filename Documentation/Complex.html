@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+  <head>
+    <title>IsaacCompiler | _Complex support</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>C <code>_Complex</code> support</h1>
+    <p>
+      IsaacCompiler implements the C99/C11 <code>_Complex</code> floating types
+      (<code>float&nbsp;_Complex</code>, <code>double&nbsp;_Complex</code> and
+      <code>long&nbsp;double&nbsp;_Complex</code>), the GNU spelling
+      <code>__complex__</code>, and the standard <code>&lt;complex.h&gt;</code>
+      conveniences built on top of them.  <code>_Imaginary</code> is accepted as
+      an alias for <code>_Complex</code>.
+    </p>
+
+    <h2>Value model</h2>
+    <p>
+      A complex value is laid out exactly like <code>struct { T re, im; }</code>:
+      <code>2&nbsp;*&nbsp;sizeof(T)</code> bytes with the real part at offset 0
+      and the imaginary part at offset <code>sizeof(T)</code>.  So
+      <code>sizeof(float&nbsp;_Complex)</code> is 8,
+      <code>sizeof(double&nbsp;_Complex)</code> is 16, and a complex value aligns
+      like its element type.  Whole complex values are always moved
+      component-wise, so every element width stays on the fast load/store path.
+    </p>
+
+    <h2>Operators</h2>
+    <table class="Isaac-Table">
+      <thead><tr><th>Form</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>__real__ z</code> / <code>__imag__ z</code></td>
+            <td>The real / imaginary component as an assignable lvalue.</td></tr>
+        <tr><td><code>a + b</code>, <code>a - b</code>, <code>a * b</code>,
+                <code>a / b</code></td>
+            <td>Complex arithmetic.  A real operand is promoted to complex (real
+                part = the value, imaginary part = 0).</td></tr>
+        <tr><td><code>-a</code></td><td>Negates both components.</td></tr>
+        <tr><td><code>a == b</code>, <code>a != b</code></td>
+            <td>Component-wise equality, yielding <code>bool</code>.</td></tr>
+        <tr><td><code>a = b</code>, <code>a += b</code> &hellip;</td>
+            <td>Assignment / compound assignment to a complex lvalue.</td></tr>
+        <tr><td><code>__builtin_complex(re, im)</code></td>
+            <td>Construct a complex value from two real parts.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Conversions follow Annex&nbsp;G: real&nbsp;-&gt;&nbsp;complex sets the
+      imaginary part to zero; complex&nbsp;-&gt;&nbsp;real takes the real part.
+    </p>
+
+    <h2>Multiplication / division</h2>
+    <pre>
+(a + bi)(c + di) = (ac - bd) + (ad + bc)i
+(a + bi)/(c + di) = ((ac + bd) + (bc - ad)i) / (c*c + d*d)
+</pre>
+
+    <h2>&lt;complex.h&gt;</h2>
+    <p>
+      <code>complex</code> aliases <code>_Complex</code>; <code>I</code> /
+      <code>_Complex_I</code> is the imaginary unit; <code>creal</code>,
+      <code>cimag</code>, <code>conj</code> and the <code>CMPLX</code> family are
+      provided as macros over the operators above.
+    </p>
+
+    <h2>Mangling</h2>
+    <p>
+      Complex types mangle with the Itanium-ABI <code>C</code> prefix followed by
+      the element-type code: <code>Cf</code> (float), <code>Cd</code> (double),
+      <code>Cg</code> (long double).
+    </p>
+  </body>
+</html>
