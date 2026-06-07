@@ -137,8 +137,52 @@
         <td>Read-only virtual address of the most recent page fault. Valid only inside a PAGE_FAULT interrupt handler.</td>
         <td>V5 or greater</td>
       </tr>
+      <tr>
+        <td>0x0E</td>
+        <td>INT_ARG0</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>
+          Read-only interrupt argument 0. The processor populates INT_ARG0..3
+          immediately before entering a handler for interrupts that carry
+          arguments (e.g. the TLB-shootdown descriptor for
+          <a href="Interrupts.html">INT_TLB_SHOOTDOWN</a> /
+          INT_TLB_SHOOTDOWN_DONE). Valid only inside such a handler.
+        </td>
+        <td>V6 or greater</td>
+      </tr>
+      <tr>
+        <td>0x0F</td>
+        <td>INT_ARG1</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Read-only interrupt argument 1 (see INT_ARG0).</td>
+        <td>V6 or greater</td>
+      </tr>
+      <tr>
+        <td>0x10</td>
+        <td>INT_ARG2</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Read-only interrupt argument 2 (see INT_ARG0).</td>
+        <td>V6 or greater</td>
+      </tr>
+      <tr>
+        <td>0x11</td>
+        <td>INT_ARG3</td>
+        <td>Kernel</td>
+        <td>None</td>
+        <td>Read-only interrupt argument 3 (see INT_ARG0).</td>
+        <td>V6 or greater</td>
+      </tr>
     </tbody>
   </table>
+  <p>
+    Writing KERNEL_TLPTR (0x08) or USER_TLPTR (0x09) switches address space and
+    evicts the TLB entries belonging to the replaced TLPTR on that core. TLPTR is
+    the address-space identity for TLB shootdown (StackVM has no ASID); see
+    <a href="TlbShootdown.html">TlbShootdown.html</a>.
+  </p>
   <h3 id="SYSREG_FLAGS">SYSREG: FLAGS</h3>
   <table id="BITMAP_FLAGS" class="Isaac-Table">
     <thead>

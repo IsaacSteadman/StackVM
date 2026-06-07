@@ -6,85 +6,161 @@
     <script type="text/javascript" src="darkModeHelper.js"></script>
   </head>
   <body>
-    <h1>INVTLB (TLB Invalidation Group)</h1>
+    <h1>INVTLB (TLB Maintenance / Shootdown Group)</h1>
     <p>
       INVTLB is opcode 0x0F. The byte immediately following the opcode selects
       the sub-operation. INVTLB instructions are privileged and may only be
-      executed at kernel privilege level (priv_lvl = 0).
+      executed at kernel privilege level (priv_lvl = 0); executing INVTLB at user
+      privilege triggers a
+      <a href="Interrupts.html#INTERRUPT_PROTECT_FAULT">PROTECT_FAULT</a>.
     </p>
     <p>
-      <strong>Note:</strong> This opcode replaces the old INT (0x0F) opcode.
-      Software interrupts are now issued via
-      <a href="CALL_E.html">CALL_E</a> with the IS_INT flag.
+      The full model (the no-ASID design, the TLPTR self-filter, SYNC vs. ASYNC
+      completion, broadcast vs. remote-interrupt delivery, and the memory-ordering
+      contract) is described in
+      <a href="TlbShootdown.html">TlbShootdown.html</a>. This page documents the
+      encoding.
+    </p>
+    <p>
+      <strong>Note:</strong> This opcode replaces the old INT (0x0F) opcode;
+      software interrupts are issued via <a href="CALL_E.html">CALL_E</a> with the
+      IS_INT flag. The earlier transactional INVTLB_BEGIN / INVTLB_COMMIT
+      sub-operations have been removed in favour of the sub-operations below.
     </p>
 
     <h2>Sub-Operations</h2>
     <table class="Isaac-Table">
       <thead>
         <tr>
-          <th>Sub-Op Code</th>
+          <th>Sub-Op</th>
           <th>Name</th>
+          <th>Encoding</th>
+          <th>Stack Effect (pop order)</th>
           <th>Description</th>
-          <th>Stack Effect</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>0x00</td>
-          <td>INVTLB_BEGIN</td>
+          <td>INVTLB_LOCAL</td>
+          <td><code>[0x0F][0x00]</code></td>
+          <td>[UInt64 tlptr, UInt64 vaddr_base, UInt64 page_count] -&gt; []</td>
           <td>
-            Begin a TLB shootdown sequence. Pops the target TLB pointer
-            (<code>tlptr</code>), the virtual address base
-            (<code>vaddr_base</code>), and the region size
-            (<code>vaddr_size</code>) from the stack. The implementation may
-            send an IPI to all other cores to invalidate the specified range.
+            Invalidate, in <em>this</em> core's TLB only, <code>page_count</code>
+            pages starting at <code>vaddr_base</code> under address space
+            <code>tlptr</code>.
           </td>
-          <td>[UInt64 tlptr, UInt64 vaddr_base, UInt64 vaddr_size] -&gt; []</td>
         </tr>
         <tr>
           <td>0x01</td>
-          <td>INVTLB_COMMIT</td>
-          <td>
-            Commit the TLB invalidation initiated by INVTLB_BEGIN. Clears the
-            pending invalidation state. Must be called after INVTLB_BEGIN.
-          </td>
+          <td>INVTLB_ALL_LOCAL</td>
+          <td><code>[0x0F][0x01]</code></td>
           <td>[] -&gt; []</td>
+          <td>Flush this core's entire TLB (e.g. AP bring-up).</td>
+        </tr>
+        <tr>
+          <td>0x02</td>
+          <td>INVTLB_SINGLE</td>
+          <td><code>[0x0F][0x02][flags]</code></td>
+          <td>
+            [UInt64 tlptr, UInt64 vaddr_base, UInt64 page_count
+            (, UInt64 done_core if ASYNC)] -&gt; []
+          </td>
+          <td>
+            Issue a shootdown for one (tlptr, vaddr_base, page_count) descriptor.
+            <code>flags</code> select the semantics (see below).
+          </td>
+        </tr>
+        <tr>
+          <td>0x03</td>
+          <td>INVTLB_MULTI</td>
+          <td><code>[0x0F][0x03][flags]</code></td>
+          <td>
+            [UInt64 entry_ptr, UInt64 num_entries
+            (, UInt64 done_core if ASYNC)] -&gt; []
+          </td>
+          <td>
+            Issue a fan-out shootdown. <code>entry_ptr</code> points at an array of
+            <code>num_entries</code> 24-byte descriptors
+            <code>{UInt64 tlptr; UInt64 vaddr_base; UInt64 page_count;}</code> in
+            kernel address space (resolved via KERNEL_TLPTR when paging is enabled,
+            else physical).
+          </td>
+        </tr>
+        <tr>
+          <td>0x04</td>
+          <td>INVTLB_ACK</td>
+          <td><code>[0x0F][0x04]</code></td>
+          <td>[UInt64 handle] -&gt; []</td>
+          <td>
+            Remote-interrupt fallback only: a core that serviced an
+            INT_TLB_SHOOTDOWN acknowledges completion to the issuer using the
+            handle supplied in the interrupt.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Sub-op values 0x05 and above are reserved (e.g. for future VMID / stage-2 ops).</p>
+
+    <h2>Flags byte (INVTLB_SINGLE / INVTLB_MULTI)</h2>
+    <table class="Isaac-Table">
+      <thead>
+        <tr>
+          <th>Bit</th>
+          <th>Name</th>
+          <th>Meaning</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>0x01</td>
+          <td>ASYNC</td>
+          <td>
+            Do not block. On completion, deliver
+            <a href="Interrupts.html#INTERRUPT_TLB_SHOOTDOWN_DONE">INT_TLB_SHOOTDOWN_DONE</a>
+            to <code>done_core</code> (popped from the stack). When clear (SYNC),
+            the instruction retires only once the shootdown is complete.
+          </td>
+        </tr>
+        <tr>
+          <td>0x02</td>
+          <td>REMOTE_INT</td>
+          <td>
+            Fallback: interrupt the matching cores
+            (<a href="Interrupts.html#INTERRUPT_TLB_SHOOTDOWN">INT_TLB_SHOOTDOWN</a>)
+            instead of invalidating their TLBs by hardware broadcast. When clear,
+            the broadcast path is used and remote cores are not interrupted.
+          </td>
+        </tr>
+        <tr>
+          <td>0x04</td>
+          <td>ALSO_LOCAL</td>
+          <td>Also invalidate the issuing core's own TLB for the descriptor(s).</td>
+        </tr>
+        <tr>
+          <td>0x08</td>
+          <td>INCLUDE_INTERMEDIATE</td>
+          <td>
+            Also drop cached intermediate page-walk entries (required when a
+            non-leaf PTE was changed); default is leaf-only.
+          </td>
         </tr>
       </tbody>
     </table>
 
-    <h2>Stack Diagram (INVTLB_BEGIN)</h2>
-    <div>
-      <ul class="stack">
-        <li>
-          <span class="kw-type">UInt64</span>
-          <span class="kw-var">tlptr</span>
-        </li>
-        <li>
-          <span class="kw-type">UInt64</span>
-          <span class="kw-var">vaddr_base</span>
-        </li>
-        <li>
-          <span class="kw-type">UInt64</span>
-          <span class="kw-var">vaddr_size</span>
-        </li>
-      </ul>
-      <span>->INVTLB_BEGIN-></span>
-      <ul class="stack">
-        <li>(empty)</li>
-      </ul>
-    </div>
-
     <h2>Encoding</h2>
     <p>
-      An INVTLB instruction is always 2 bytes: <code>[0x0F][sub_op]</code>.
-      Sub-op values 0x02 and above are reserved.
+      INVTLB_LOCAL, INVTLB_ALL_LOCAL and INVTLB_ACK are 2 bytes
+      (<code>[0x0F][sub_op]</code>). INVTLB_SINGLE and INVTLB_MULTI are 3 bytes
+      (<code>[0x0F][sub_op][flags]</code>). All operands are taken from the data
+      stack; pages are counted in units of the current VM-mode page size, and
+      <code>vaddr_base</code> is page-aligned (low bits ignored).
     </p>
 
     <h2>Privilege</h2>
     <p>
-      Both sub-operations require kernel privilege (priv_lvl = 0). Executing
-      INVTLB at user privilege triggers a
+      All sub-operations require kernel privilege (priv_lvl = 0). Executing INVTLB
+      at user privilege triggers a
       <a href="Interrupts.html#INTERRUPT_PROTECT_FAULT">PROTECT_FAULT</a>.
     </p>
   </body>

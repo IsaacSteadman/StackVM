@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM | TLB &amp; TLB Shootdown</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>StackVM TLB &amp; TLB Shootdown</h1>
+    <p>
+      This page is the canonical description of StackVM's translation-lookaside
+      buffer (TLB) and the multi-core TLB-shootdown protocol. The instruction
+      encoding is in <a href="INVTLB.html">INVTLB.html</a>; the interrupt vectors
+      are in <a href="Interrupts.html">Interrupts.html</a>; the relevant system
+      registers are in <a href="SYSREG.html">SYSREG.html</a>.
+    </p>
+
+    <h2>1. The TLB and address-space identity (no ASID)</h2>
+    <p>
+      StackVM deliberately has <strong>no ASID/PCID</strong>. Instead, the
+      top-level page-table pointer (<em>TLPTR</em>) <em>is</em> the address-space
+      identity. Each core has exactly two active TLPTRs at any time: its
+      <a href="SYSREG.html">KERNEL_TLPTR</a> (0x08) and
+      <a href="SYSREG.html">USER_TLPTR</a> (0x09). Kernel-space virtual addresses
+      resolve through KERNEL_TLPTR and user-space addresses through USER_TLPTR.
+    </p>
+    <p><strong>TLB invariant.</strong> A core's TLB may only contain entries
+      derived from its two currently-active TLPTRs. Each entry is therefore tagged
+      with the TLPTR it came from.</p>
+    <p><strong>Auto-flush on switch.</strong> Writing KERNEL_TLPTR or USER_TLPTR
+      evicts the TLB entries tagged with the <em>replaced</em> value (unless the
+      same value is still referenced by the other slot). Because KERNEL_TLPTR
+      rarely changes, kernel translations survive context switches — which is the
+      persistence a "global" page bit would provide on an ASID-tagged design, so
+      StackVM needs no global bit. The cost of having no ASID is that the user TLB
+      is dropped on each address-space switch.</p>
+    <p>
+      A consequence worth stating: StackVM does not map the same kernel pages into
+      every user address space. The kernel has its own TLPTR. Memory genuinely
+      shared between address spaces (user↔user IPC, user↔kernel io_uring) simply
+      appears under more than one TLPTR, and unmapping it requires one shootdown
+      <em>per TLPTR</em> it appears under — which the multi-descriptor request
+      (below) issues in one instruction.
+    </p>
+
+    <h2>2. Shootdown descriptor and self-filtering</h2>
+    <p>A shootdown is described by one or more 24-byte descriptors:</p>
+    <pre>struct TlbShootdownEntry {
+    uint64_t tlptr;        // address-space identity
+    uint64_t vaddr_base;   // page-aligned
+    uint64_t page_count;   // pages, in the current VM-mode page size
+};</pre>
+    <p>
+      <strong>Self-filter.</strong> A core acts on a descriptor only if
+      <code>descriptor.tlptr == KERNEL_TLPTR || descriptor.tlptr == USER_TLPTR</code>
+      on that core; otherwise it ignores the request. This is safe precisely
+      because of the TLB invariant plus auto-flush: if a TLPTR is not currently
+      active on a core, that core cannot be holding any entries for it (it dropped
+      them when it switched away), and it will rebuild fresh entries from the
+      (now-edited) page tables if it ever switches back.
+    </p>
+
+    <h2>3. Request shapes: single vs. multi</h2>
+    <ul>
+      <li><strong>Single</strong> (<a href="INVTLB.html">INVTLB_SINGLE</a>): the
+        descriptor <code>(tlptr, vaddr_base, page_count)</code> is passed on the
+        stack. The matching interrupt (request or completion) reports the same
+        three values.</li>
+      <li><strong>Multi</strong> (<a href="INVTLB.html">INVTLB_MULTI</a>): a
+        <code>(entry_ptr, num_entries)</code> pair points at an array of
+        descriptors in kernel address space. The matching interrupt reports the
+        same pointer and length. Multi exists to fan a shared page out across all
+        the TLPTRs it lives under in a single request.</li>
+    </ul>
+
+    <h2>4. Completion: SYNC vs. ASYNC</h2>
+    <ul>
+      <li><strong>SYNC</strong> (ASYNC flag clear): the issuing instruction blocks
+        and retires only once the shootdown is complete on all targets.</li>
+      <li><strong>ASYNC</strong> (ASYNC flag set): the instruction posts the
+        request and returns immediately. When the shootdown completes,
+        <a href="Interrupts.html#INTERRUPT_TLB_SHOOTDOWN_DONE">INT_TLB_SHOOTDOWN_DONE</a>
+        is delivered to a nominated <code>done_core</code> (which may be the issuer
+        or any other core), carrying the same descriptor data so the continuation
+        can resume or migrate there.</li>
+    </ul>
+
+    <h2>5. Delivery: hardware broadcast vs. remote-interrupt fallback</h2>
+    <ul>
+      <li><strong>Broadcast</strong> (REMOTE_INT flag clear, recommended): the
+        hardware invalidates the matching entries in the other cores' TLBs without
+        interrupting them. No ISR runs on the targets.</li>
+      <li><strong>Remote-interrupt</strong> (REMOTE_INT flag set, documented
+        fallback): the matching cores take
+        <a href="Interrupts.html#INTERRUPT_TLB_SHOOTDOWN">INT_TLB_SHOOTDOWN</a>,
+        invalidate the range with INVTLB_LOCAL, and acknowledge with INVTLB_ACK
+        using the handle supplied in the interrupt. The issuer's completion (SYNC
+        retire or ASYNC done-interrupt) fires once all targets have acknowledged.</li>
+    </ul>
+    <p>
+      The ALSO_LOCAL flag additionally invalidates the issuing core's own TLB (a
+      shootdown otherwise targets only <em>other</em> cores).
+    </p>
+
+    <h2>6. Memory-ordering / coherence contract</h2>
+    <p>The software sequence for changing a live mapping is:</p>
+    <pre>store new PTE
+FENCE_STORE              ; make the PTE edit globally visible first
+INVTLB_SINGLE/MULTI ...  ; invalidate stale translations
+; SYNC retire, or wait for INT_TLB_SHOOTDOWN_DONE
+; only now may the freed page be reused</pre>
+    <ul>
+      <li>Page-table walks may be speculative, so changing a mapping in a way that
+        <em>narrows</em> permissions or <em>changes the output PFN</em> requires
+        break-before-make: invalidate (and complete) before relying on the new
+        mapping. <em>Relaxing</em> permissions may be done lazily; a spurious fault
+        handler must re-check the PTE before reporting an error.</li>
+      <li>Changing a <em>non-leaf</em> PTE requires the INCLUDE_INTERMEDIATE flag so
+        cached intermediate (page-walk) entries are also dropped; leaf edits may use
+        the default leaf-only invalidation.</li>
+      <li>Huge mappings within a range are invalidated as a whole; a range that
+        covers a huge page drops all of its constituent small-page translations.</li>
+    </ul>
+
+    <h2>7. Reserved for the future</h2>
+    <p>
+      INVTLB sub-op codes 0x05+ and flag bits 0x10+ are reserved so that VMID /
+      two-stage (stage-2) translation for hosting a hypervisor can be added without
+      breaking the encoding.
+    </p>
+
+    <h2>8. Emulator notes</h2>
+    <p>
+      The Python reference emulator (<code>StackVM/PyStackVM.py</code>) implements a
+      consulted per-core TLB, the auto-flush invariant, the self-filter, and a
+      cooperative multi-core bus (<code>MultiCoreController</code>). Because that bus
+      steps cores one at a time, the broadcast path applies invalidations to sibling
+      TLBs synchronously; ASYNC completion is posted to <code>done_core</code>'s
+      interrupt mailbox, and SYNC retires immediately after the synchronous
+      broadcast. The C++ core (<code>StackVM/cpp/stack_vm.cpp</code>) implements the
+      consulted TLB and all INVTLB sub-operations for a single core; cross-core
+      broadcast and async completion are handled by the controller in the reference
+      model.
+    </p>
+  </body>
+</html>

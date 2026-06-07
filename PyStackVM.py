@@ -257,6 +257,13 @@ SVSR_CYCLE_COUNT = 0x0C  # R (kernel): per-core cycle counter
 SVSR_PAGE_FAULT_ADDR = (
     0x0D  # R (kernel): CR2 equivalent; set by VM on page/protect fault
 )
+# Interrupt-argument registers (read-only, kernel): populated by the VM when it
+# delivers an interrupt that carries arguments (e.g. the TLB-shootdown descriptor
+# for INT_TLB_SHOOTDOWN / INT_TLB_SHOOTDOWN_DONE, or the info pointer for HW_IO).
+SVSR_INT_ARG0 = 0x0E
+SVSR_INT_ARG1 = 0x0F
+SVSR_INT_ARG2 = 0x10
+SVSR_INT_ARG3 = 0x11
 
 StackVM_SVSR_Codes = {
     # v3 two-privilege-level layout
@@ -274,6 +281,10 @@ StackVM_SVSR_Codes = {
     "IPI": SVSR_IPI,
     "CYCLE_COUNT": SVSR_CYCLE_COUNT,
     "PAGE_FAULT_ADDR": SVSR_PAGE_FAULT_ADDR,
+    "INT_ARG0": SVSR_INT_ARG0,
+    "INT_ARG1": SVSR_INT_ARG1,
+    "INT_ARG2": SVSR_INT_ARG2,
+    "INT_ARG3": SVSR_INT_ARG3,
 }
 
 INT_DIV_BY_ZERO = 0x00
@@ -290,32 +301,35 @@ INT_PAGE_FAULT = 0x0E
 INT_INVAL_SYSCALL = 0x0F
 INT_HW_IO = 0x10
 INT_TIMER = 0x11
-INT_TLB_SHOOTDOWN = 0x1F
+INT_TLB_SHOOTDOWN_DONE = 0x1E  # async TLB-shootdown completion (delivered to done_core)
+INT_TLB_SHOOTDOWN = 0x1F  # TLB-shootdown request (remote-interrupt fallback path)
 INT_LST = (
     [
-        "DIV_BY_ZERO",
-        "DEBUG",
-        "NMI",
-        "BREAKPOINT",
-        "OVERFLOW",
-        "BOUNDS_CHECK",
-        "INVAL_OPCODE",
-        "FPU_FAULT",
-        "DOUBLE_FAULT",
-        "UNKNOWN",
-        "UNKNOWN",
-        "UNKNOWN",
-        "UNKNOWN",
-        "PROTECT_FAULT",
-        "PAGE_FAULT",
-        "INVAL_SYSCALL",
-        "HW_IO",
-        "TIMER",
+        "DIV_BY_ZERO",  # 0x00
+        "DEBUG",  # 0x01
+        "NMI",  # 0x02
+        "BREAKPOINT",  # 0x03
+        "OVERFLOW",  # 0x04
+        "BOUNDS_CHECK",  # 0x05
+        "INVAL_OPCODE",  # 0x06
+        "FPU_FAULT",  # 0x07
+        "DOUBLE_FAULT",  # 0x08
+        "UNKNOWN",  # 0x09
+        "UNKNOWN",  # 0x0A
+        "UNKNOWN",  # 0x0B
+        "UNKNOWN",  # 0x0C
+        "PROTECT_FAULT",  # 0x0D
+        "PAGE_FAULT",  # 0x0E
+        "INVAL_SYSCALL",  # 0x0F
+        "HW_IO",  # 0x10
+        "TIMER",  # 0x11
     ]
-    + ["UNKNOWN"] * 14
-    + ["TLB_SHOOTDOWN"]
-    + ["UNKNOWN"] * 224
+    + ["UNKNOWN"] * 12  # 0x12 .. 0x1D
+    + ["TLB_SHOOTDOWN_DONE"]  # 0x1E
+    + ["TLB_SHOOTDOWN"]  # 0x1F
+    + ["UNKNOWN"] * 224  # 0x20 .. 0xFF
 )
+assert len(INT_LST) == 256
 
 MRQ_DONT_CHECK = 0
 MRQ_READ = 1
@@ -725,7 +739,13 @@ StackVM_BC128_Codes = {
     "BSWAP4": 0x18,
     "BSWAP8": 0x19,
 }
-StackVM_INVTLB_Codes = {"BEGIN": 0x00, "COMMIT": 0x01}
+StackVM_INVTLB_Codes = {
+    "LOCAL": 0x00,
+    "ALL_LOCAL": 0x01,
+    "SINGLE": 0x02,
+    "MULTI": 0x03,
+    "ACK": 0x04,
+}
 StackVM_ORDERING_Codes = {
     "RELAXED": 0x00,
     "ACQUIRE": 0x01,
@@ -771,6 +791,10 @@ LstStackVM_sysregs = [
     "IPI",  # 0x0B
     "CYCLE_COUNT",  # 0x0C
     "PAGE_FAULT_ADDR",  # 0x0D
+    "INT_ARG0",  # 0x0E
+    "INT_ARG1",  # 0x0F
+    "INT_ARG2",  # 0x10
+    "INT_ARG3",  # 0x11
 ]
 LstStackVM_BCS_Types = [
     "SZ1_",
@@ -977,15 +1001,41 @@ def vm_int128(vm_inst):
 
 
 # ---------------------------------------------------------------------------
-# INVTLB group (opcode 0x0F) sub-operation codes
+# INVTLB group (opcode 0x0F) sub-operation codes + TLB constants
 # ---------------------------------------------------------------------------
-INVTLB_BEGIN = 0x00
-INVTLB_COMMIT = 0x01
+# Sub-operations (the byte after the 0x0F opcode):
+INVTLB_LOCAL = 0x00  # [0x0F][0x00]        pop(count, base, tlptr): flush local range
+INVTLB_ALL_LOCAL = 0x01  # [0x0F][0x01]        flush this core's entire TLB
+INVTLB_SINGLE = 0x02  # [0x0F][0x02][flags] pop([done_core,] count, base, tlptr)
+INVTLB_MULTI = 0x03  # [0x0F][0x03][flags] pop([done_core,] num_entries, entry_ptr)
+INVTLB_ACK = 0x04  # [0x0F][0x04]        pop(handle): remote-int completion ack
+
+# Flags byte for INVTLB_SINGLE / INVTLB_MULTI:
+INVTLB_F_ASYNC = 0x01  # don't block; deliver INT_TLB_SHOOTDOWN_DONE on completion
+INVTLB_F_REMOTE_INT = 0x02  # fallback: interrupt matching cores instead of HW broadcast
+INVTLB_F_ALSO_LOCAL = 0x04  # also invalidate the issuing core's own TLB
+INVTLB_F_INCLUDE_INTERMEDIATE = 0x08  # also drop page-walk (intermediate) caches
+
+# Per-entry size for INVTLB_MULTI descriptor array: {tlptr, vaddr_base, page_count}.
+INVTLB_ENTRY_SIZE = 24
+
+# TLB permission-validation mask bits (which access modes a cached entry covers).
+TLBP_R = 1
+TLBP_W = 2
+TLBP_X = 4
+_MRQ_TO_TLBP = {MRQ_READ: TLBP_R, MRQ_WRITE: TLBP_W, MRQ_EXEC: TLBP_X}
+
+# Page size by virtual-memory mode (used for TLB keying / range invalidation).
+# Numeric keys (VM_* constants are defined later in this module):
+#   0 = VM_DISABLED, 1 = VM_4_LVL_9_BIT, 2 = VM_4_LVL_10_BIT
+_VM_PAGE_SIZE = {0: 4096, 1: 4096, 2: 8192}
 
 
 def vm_invtlb(vm_inst):
     """
-    Opcode 0x0F — TLB invalidation protocol (kernel-only).
+    Opcode 0x0F — TLB maintenance / shootdown group (kernel-only).
+
+    See StackVM/Documentation/INVTLB.html and TlbShootdown.html for the model.
     :param VirtualMachine vm_inst:
     """
     op = vm_inst.get_instr_dat(1)
@@ -995,19 +1045,40 @@ def vm_invtlb(vm_inst):
     if vm_inst.priv_lvl != 0:
         vm_inst.trap(INT_PROTECT_FAULT, vm_inst.ip)
         return
-    if op == INVTLB_BEGIN:
-        # [8B tlptr][8B vaddr_base][8B vaddr_size] -> --  (pop order: size, base, ptr)
-        vaddr_size = vm_inst.pop(8)
+    if op == INVTLB_LOCAL:
+        # pop order: count, base, tlptr (push order: tlptr, base, count)
+        page_count = vm_inst.pop(8)
         vaddr_base = vm_inst.pop(8)
         tlptr = vm_inst.pop(8)
-        vm_inst._tlb_inv_tlptr = tlptr
-        vm_inst._tlb_inv_base = vaddr_base
-        vm_inst._tlb_inv_size = vaddr_size
-    elif op == INVTLB_COMMIT:
-        # Flush local TLB for registered range (no-op in single-core emulator)
-        vm_inst._tlb_inv_tlptr = 0
-        vm_inst._tlb_inv_base = 0
-        vm_inst._tlb_inv_size = 0
+        vm_inst.tlb_invalidate_range(tlptr, vaddr_base, page_count)
+    elif op == INVTLB_ALL_LOCAL:
+        vm_inst.tlb_flush_all()
+    elif op == INVTLB_SINGLE:
+        flags = vm_inst.get_instr_dat(1)
+        done_core = vm_inst.pop(8) if (flags & INVTLB_F_ASYNC) else None
+        page_count = vm_inst.pop(8)
+        vaddr_base = vm_inst.pop(8)
+        tlptr = vm_inst.pop(8)
+        vm_inst.tlb_shootdown([(tlptr, vaddr_base, page_count)], flags, done_core)
+    elif op == INVTLB_MULTI:
+        flags = vm_inst.get_instr_dat(1)
+        done_core = vm_inst.pop(8) if (flags & INVTLB_F_ASYNC) else None
+        num_entries = vm_inst.pop(8)
+        entry_ptr = vm_inst.pop(8)
+        descs = []
+        for i in range(num_entries):
+            base_e = entry_ptr + i * INVTLB_ENTRY_SIZE
+            tlptr = vm_inst.get_as_priv(0, 8, base_e)
+            vaddr_base = vm_inst.get_as_priv(0, 8, base_e + 8)
+            page_count = vm_inst.get_as_priv(0, 8, base_e + 16)
+            descs.append((tlptr, vaddr_base, page_count))
+        vm_inst.tlb_shootdown(
+            descs, flags, done_core, multi_ptr=entry_ptr, multi_len=num_entries
+        )
+    elif op == INVTLB_ACK:
+        handle = vm_inst.pop(8)
+        if vm_inst.ipi_controller is not None:
+            vm_inst.ipi_controller.tlb_ack(handle)
     else:
         vm_inst.trap(INT_INVAL_OPCODE, vm_inst.ip)
 
@@ -1548,6 +1619,80 @@ class AdvProgIntCtl(object):
         self.arg3 = arg3
 
 
+class MultiCoreController(object):
+    """Minimal coherence / IPI bus shared by a set of StackVM cores.
+
+    Cores register via add_core(); the bus routes inter-processor interrupts and
+    TLB-shootdown requests.  TLB shootdowns use the hardware-broadcast model by
+    default (sibling TLBs are invalidated directly, without interrupting those
+    cores).  The REMOTE_INT fallback instead posts INT_TLB_SHOOTDOWN to the cores
+    whose active TLPTRs match the request; those cores acknowledge by executing
+    INVTLB_ACK, which the bus routes back to the issuer.
+
+    This is a cooperative (single-threaded) model: cores are stepped explicitly
+    by the host.  Each core's mailbox (AdvProgIntCtl) holds a single pending
+    interrupt, so the host should let a core service one interrupt before
+    another is posted to it.
+    """
+
+    def __init__(self):
+        self.cores = {}  # core_id -> VirtualMachine
+        self._handle_issuer = {}  # shootdown handle -> issuing VirtualMachine
+
+    def add_core(self, vm):
+        self.cores[int(vm.sys_regs[SVSR_CORE_ID])] = vm
+        vm.ipi_controller = self
+        return vm
+
+    def deliver_interrupt(self, core_id, int_n, a0=0, a1=0, a2=0, a3=0):
+        vm = self.cores.get(int(core_id))
+        if vm is None:
+            return False
+        if vm.apic is not None:
+            vm.apic.trigger(int_n, a0, a1, a2, a3)
+        else:
+            vm.ipi_log.append(("int", int_n, a0, a1, a2, a3))
+        return True
+
+    def send_ipi(self, src, target_core_id, irq, value):
+        # General IPI: deliver `irq` as the interrupt vector to the target core.
+        self.deliver_interrupt(target_core_id, irq, value)
+
+    def tlb_shootdown(self, src, descs, remote_int, sync, handle):
+        """Apply a shootdown to sibling cores; return the number of cores that
+        still owe an INVTLB_ACK (only ever non-zero on the async remote-int
+        path)."""
+        remaining = 0
+        for cid, c in self.cores.items():
+            if c is src:
+                continue
+            matches = any(c.tlb_has_tlptr(t) for (t, _b, _n) in descs)
+            if remote_int and not sync:
+                if matches:
+                    self._handle_issuer[handle] = src
+                    t, b, n = descs[0]
+                    self.deliver_interrupt(cid, INT_TLB_SHOOTDOWN, t, b, n, handle)
+                    remaining += 1
+            else:
+                # Broadcast (and the SYNC fallback): invalidate sibling TLBs
+                # directly.  REMOTE_INT additionally posts the request interrupt
+                # for observability, but completion does not depend on it.
+                for (t, b, n) in descs:
+                    c.tlb_invalidate_range(t, b, n)
+                if remote_int and matches:
+                    t, b, n = descs[0]
+                    self.deliver_interrupt(cid, INT_TLB_SHOOTDOWN, t, b, n, 0)
+        return remaining
+
+    def tlb_ack(self, handle):
+        issuer = self._handle_issuer.get(handle)
+        if issuer is None:
+            return
+        issuer._tlb_ack_one(handle)
+        if handle not in issuer._tlb_outstanding:
+            self._handle_issuer.pop(handle, None)
+
+
 def vm_interrupt(vm_inst):
     """
     :param VirtualMachine vm_inst:
@@ -1900,7 +2045,7 @@ class VirtualMachine(object):
 
     def __init__(self, heap_sz=16384, stack_sz=4096):
         self.api = InterruptApi()
-        self.sys_regs = array.array("Q", [0] * 16)
+        self.sys_regs = array.array("Q", [0] * 18)
         self.priority = 255
         self.priv_lvl = 1
         self.sys_regs[SVSR_FLAGS] = self.priority | (self.priv_lvl << 8)
@@ -1918,6 +2063,9 @@ class VirtualMachine(object):
         self.ipi_log = []
         self.ipi_controller = None
         self.virt_mem_mode = VM_DISABLED
+        # FLAGS bit 9: 0 => kernel may fall back to USER_TLPTR; 1 => the vaddr MSB
+        # selects the address space (see SYSREG.html / _select_tlptrs).
+        self.vaddr_msb_eq_priv = 0
         self.virt_error_code = VME_NONE
         self.dbg_walk_page = False
 
@@ -1933,10 +2081,18 @@ class VirtualMachine(object):
             True  # True if virtualizing syscalls from USER to KERNEL
         )
         self.watch_data = []
-        # TLB invalidation state (used by INVTLB_BEGIN / INVTLB_COMMIT)
-        self._tlb_inv_tlptr = 0
-        self._tlb_inv_base = 0
-        self._tlb_inv_size = 0
+        # ---- Software TLB ---------------------------------------------------
+        # Per-core translation cache.  Key: (tlptr, page_aligned_vaddr).
+        # Value: [phys_page_base, validated_perm_mask] where the mask records
+        # which access modes (TLBP_R/W/X) have already been validated through a
+        # full page-table walk for this entry.  The TLB may only hold entries
+        # belonging to the two currently-active TLPTRs (kernel + user); this is
+        # enforced lazily by _tlb_check_switch() whenever a TLPTR changes.
+        self.tlb = {}
+        self._tlb_tag = [None, None]  # last-seen active TLPTR per priv slot (0,1)
+        # Outstanding ASYNC shootdowns issued by this core: handle -> record.
+        self._tlb_outstanding = {}
+        self._tlb_next_handle = 1
 
     def set_core_id(self, core_id: int):
         self.sys_regs[SVSR_CORE_ID] = int(core_id)
@@ -1952,6 +2108,156 @@ class VirtualMachine(object):
             self.apic.trigger(irq, self.sys_regs[SVSR_CORE_ID], value)
         else:
             self.ipi_log.append((target_core_id, irq, value))
+
+    # -----------------------------------------------------------------------
+    # Software TLB + TLB shootdown
+    # -----------------------------------------------------------------------
+    def active_tlptr(self, priv_lvl: int) -> int:
+        """Top-level page-table base used to translate addresses at *priv_lvl*.
+
+        Kernel (priv 0) uses SVSR_KERNEL_TLPTR (0x08); user (priv 1) uses
+        SVSR_USER_TLPTR (0x09), per the architectural register layout in
+        SYSREG.html.  This is the value walk_page() consumes; the TLB is tagged
+        with it and shootdown requests self-filter against the two active TLPTRs.
+        """
+        return self.sys_regs[SVSRB_TLPTR + priv_lvl]
+
+    def tlb_has_tlptr(self, tlptr: int) -> bool:
+        """True if *tlptr* is one of this core's two active TLPTRs (kernel/user).
+
+        A shootdown for a TLPTR that is not active here can be safely ignored.
+        """
+        return (
+            tlptr == self.sys_regs[SVSR_KERNEL_TLPTR]
+            or tlptr == self.sys_regs[SVSR_USER_TLPTR]
+        )
+
+    def _tlb_page_size(self) -> int:
+        return _VM_PAGE_SIZE.get(self.virt_mem_mode, 4096)
+
+    def _tlb_check_switch(self):
+        """Enforce the invariant that the TLB only holds entries for the two
+        currently-active TLPTRs (KERNEL_TLPTR + USER_TLPTR).  Called lazily on
+        each translation: if either TLPTR changed, evict entries belonging to the
+        replaced value (unless it is still referenced by the other slot)."""
+        for slot in (0, 1):
+            cur = self.active_tlptr(slot)
+            old = self._tlb_tag[slot]
+            if cur == old:
+                continue
+            if old is not None and old != self.active_tlptr(slot ^ 1):
+                self.tlb_flush_tlptr(old)
+            self._tlb_tag[slot] = cur
+
+    def _select_tlptrs(self, virt_addr: int, priv_lvl: int):
+        """Ordered TLPTRs to try when translating *virt_addr* at *priv_lvl*, per
+        the access model in SYSREG.html.  An empty tuple means the access is not
+        permitted (fault).  Both modes allow the kernel to reach user space."""
+        K = self.sys_regs[SVSR_KERNEL_TLPTR]
+        U = self.sys_regs[SVSR_USER_TLPTR]
+        if self.vaddr_msb_eq_priv:
+            # The MSB of the virtual address selects the address space.
+            if (virt_addr >> 63) & 1:
+                return (U,)  # user half: kernel and user both use USER_TLPTR
+            return (K,) if priv_lvl == 0 else ()  # kernel half: kernel only
+        # MSB-independent: kernel tries KERNEL_TLPTR then falls back to USER_TLPTR.
+        if priv_lvl == 0:
+            return (K, U)
+        return (U,)
+
+    def tlb_invalidate_range(self, tlptr: int, vaddr_base: int, page_count: int):
+        """Remove TLB entries for *page_count* pages starting at *vaddr_base*
+        under address space *tlptr* (no-op for pages not currently cached)."""
+        if not self.tlb:
+            return
+        page_size = self._tlb_page_size()
+        base = vaddr_base - (vaddr_base % page_size)
+        tlb = self.tlb
+        for i in range(page_count):
+            tlb.pop((tlptr, base + i * page_size), None)
+
+    def tlb_flush_tlptr(self, tlptr: int):
+        """Remove every TLB entry belonging to address space *tlptr*."""
+        if not self.tlb:
+            return
+        for key in [k for k in self.tlb if k[0] == tlptr]:
+            del self.tlb[key]
+
+    def tlb_flush_all(self):
+        """Flush this core's entire TLB."""
+        self.tlb.clear()
+        self._tlb_tag = [None, None]
+
+    def _tlb_alloc_handle(self) -> int:
+        """Allocate a globally-unique shootdown handle (core id in the high bits)."""
+        h = (int(self.sys_regs[SVSR_CORE_ID]) << 32) | self._tlb_next_handle
+        self._tlb_next_handle += 1
+        return h
+
+    def tlb_shootdown(self, descs, flags, done_core, multi_ptr=None, multi_len=None):
+        """Issue a TLB shootdown for the list of (tlptr, vaddr_base, page_count)
+        descriptors.  *flags* selects SYNC/ASYNC, broadcast/remote-int, and
+        whether to also invalidate the issuing core."""
+        also_local = bool(flags & INVTLB_F_ALSO_LOCAL)
+        remote_int = bool(flags & INVTLB_F_REMOTE_INT)
+        is_async = bool(flags & INVTLB_F_ASYNC)
+        if also_local:
+            for (tlptr, base, count) in descs:
+                self.tlb_invalidate_range(tlptr, base, count)
+        ctrl = self.ipi_controller
+        if is_async:
+            handle = self._tlb_alloc_handle()
+            done = (
+                int(self.sys_regs[SVSR_CORE_ID]) if done_core is None else int(done_core)
+            )
+            if multi_ptr is not None:
+                comp_args = (multi_ptr, multi_len, 0, 0)
+            elif descs:
+                t, b, n = descs[0]
+                comp_args = (t, b, n, 0)
+            else:
+                comp_args = (0, 0, 0, 0)
+            rec = {"remaining": 0, "done_core": done, "args": comp_args}
+            self._tlb_outstanding[handle] = rec
+            if ctrl is not None:
+                rec["remaining"] = ctrl.tlb_shootdown(
+                    self, descs, remote_int=remote_int, sync=False, handle=handle
+                )
+            if rec["remaining"] == 0:
+                self._tlb_complete(handle)
+        else:
+            # SYNC: cannot block the issuing core in a cooperative emulator, so
+            # the controller applies the invalidation to siblings synchronously
+            # (broadcast).  REMOTE_INT additionally posts the request interrupt
+            # to matching cores for observability but never gates completion.
+            if ctrl is not None:
+                ctrl.tlb_shootdown(
+                    self, descs, remote_int=remote_int, sync=True, handle=0
+                )
+
+    def _tlb_ack_one(self, handle: int):
+        """A remote core acknowledged completion of a remote-interrupt shootdown."""
+        rec = self._tlb_outstanding.get(handle)
+        if rec is None:
+            return
+        rec["remaining"] -= 1
+        if rec["remaining"] <= 0:
+            self._tlb_complete(handle)
+
+    def _tlb_complete(self, handle: int):
+        """Finalise an ASYNC shootdown: deliver INT_TLB_SHOOTDOWN_DONE to done_core."""
+        rec = self._tlb_outstanding.pop(handle, None)
+        if rec is None:
+            return
+        done = rec["done_core"]
+        a0, a1, a2, a3 = rec["args"]
+        ctrl = self.ipi_controller
+        if ctrl is not None and done != int(self.sys_regs[SVSR_CORE_ID]):
+            ctrl.deliver_interrupt(done, INT_TLB_SHOOTDOWN_DONE, a0, a1, a2, a3)
+        elif self.apic is not None:
+            self.apic.trigger(INT_TLB_SHOOTDOWN_DONE, a0, a1, a2, a3)
+        else:
+            self.ipi_log.append(("tlb_done", done, a0, a1, a2, a3))
 
     def check_perm_set_or_clr_error(
         self,
@@ -2469,6 +2775,64 @@ class VirtualMachine(object):
                 )
             self.memory[at_addr:a] = memory
 
+    def _tlb_translate_under(self, tlptr, addr, vmd, permissions, page_mask):
+        """Translate a single-page-contained access under a specific *tlptr* via
+        the software TLB.  Returns the physical address, or None with
+        ``self.virt_error_code`` set on fault (the caller decides whether to try a
+        fallback TLPTR or raise).  On a miss (or an access mode not yet validated
+        for a cached entry) a full page-table walk is performed and the successful
+        result is cached, so a stale entry persists until INVTLB invalidates it."""
+        vpn = addr & page_mask
+        key = (tlptr, vpn)
+        ent = self.tlb.get(key)
+        pbit = _MRQ_TO_TLBP.get(permissions, 0)
+        if ent is not None and (pbit == 0 or (ent[1] & pbit)):
+            self.virt_error_code = VME_NONE
+            return ent[0] | (addr - vpn)
+        phys = self.walk_page(addr, tlptr, vmd, permissions)
+        if self.virt_error_code:
+            return None
+        if ent is None:
+            self.tlb[key] = [phys & page_mask, pbit]
+        else:
+            ent[0] = phys & page_mask
+            ent[1] |= pbit
+        return phys
+
+    def _translate(self, addr, priv_lvl, permissions, page_mask, vmd, use_tlb):
+        """Resolve *addr* to a physical address using the TLPTR-selection model
+        (see _select_tlptrs), trying the kernel→user fallback where applicable.
+        Returns the physical address, or None after raising the appropriate fault
+        interrupt."""
+        candidates = self._select_tlptrs(addr, priv_lvl)
+        if not candidates:
+            # Access not permitted at this privilege (e.g. user touching kernel
+            # space while vaddr_msb_eq_priv is set).
+            self.virt_error_code = VME_PAGE_BAD_PERMS
+            self.virt_error_data = (0, 0, permissions, addr)
+            self.trap(INT_PROTECT_FAULT, *self.virt_error_data)
+            return None
+        last = len(candidates) - 1
+        for i, tlptr in enumerate(candidates):
+            if use_tlb:
+                phys = self._tlb_translate_under(
+                    tlptr, addr, vmd, permissions, page_mask
+                )
+            else:
+                phys = self.walk_page(addr, tlptr, vmd, permissions)
+                if self.virt_error_code:
+                    phys = None
+            if phys is not None:
+                return phys
+            if i == last:
+                ec = self.virt_error_code
+                if ec == VME_PAGE_NOT_PRESENT:
+                    self.trap(INT_PAGE_FAULT, *self.virt_error_data)
+                elif ec == VME_PAGE_BAD_PERMS:
+                    self.trap(INT_PROTECT_FAULT, *self.virt_error_data)
+                return None
+        return None
+
     def get_mv_as_priv(
         self, priv_lvl: int, sz: int, addr: int, permissions: int
     ) -> Optional[Union[memoryview, SplitMemView]]:
@@ -2478,27 +2842,22 @@ class VirtualMachine(object):
         elif vmd == VM_4_LVL_9_BIT:
             assert sz <= 4096
         if vmd:
-            phys_addr = self.walk_page(addr, self.sys_regs[priv_lvl], vmd, permissions)
-            err_code = self.virt_error_code
-            if err_code:
-                if err_code == VME_PAGE_NOT_PRESENT:
-                    self.trap(INT_PAGE_FAULT, *self.virt_error_data)
-                elif err_code == VME_PAGE_BAD_PERMS:
-                    self.trap(INT_PROTECT_FAULT, *self.virt_error_data)
-                return
+            self._tlb_check_switch()
             page_mask = [0, 0xFFFFFFFFFFFFF000, 0xFFFFFFFFFFFFE000, 0xFFFFF000][vmd]
             if sz > 1 and (addr & page_mask) != ((addr + sz - 1) & page_mask):
+                # Access straddles a page boundary: translate both pages with
+                # full walks (the TLB fast-path only handles single-page access).
+                phys_addr = self._translate(
+                    addr, priv_lvl, permissions, page_mask, vmd, False
+                )
+                if phys_addr is None:
+                    return
                 index_mask = [0, 0xFFF, 0x1FFF, 0xFFF][vmd]
                 index_mask_p1 = index_mask + 1
-                addr1 = self.walk_page(
-                    addr + index_mask_p1, self.sys_regs[priv_lvl], vmd, permissions
+                addr1 = self._translate(
+                    addr + index_mask_p1, priv_lvl, permissions, page_mask, vmd, False
                 )
-                err_code = self.virt_error_code
-                if err_code:
-                    if err_code == VME_PAGE_NOT_PRESENT:
-                        self.trap(INT_PAGE_FAULT, *self.virt_error_data)
-                    elif err_code == VME_PAGE_BAD_PERMS:
-                        self.trap(INT_PROTECT_FAULT, *self.virt_error_data)
+                if addr1 is None:
                     return
                 sz0 = index_mask_p1 - (addr1 & index_mask)
                 sz1 = (addr1 + sz) & index_mask
@@ -2527,6 +2886,11 @@ class VirtualMachine(object):
                                 % (i, perm, pt)
                             )
                 return SplitMemView(mem[addr : addr + sz0], mem[addr1 : addr1 + sz1])
+            phys_addr = self._translate(
+                addr, priv_lvl, permissions, page_mask, vmd, True
+            )
+            if phys_addr is None:
+                return
             addr = phys_addr
         mem = memoryview(self.memory)
         assert isinstance(addr, int)
@@ -2791,7 +3155,10 @@ class VirtualMachine(object):
                 else:
                     raise
             if apic.int_ready:
-                self.switch_to_interrupt_direct(apic.which_int, apic.arg0)
+                apic.int_ready = False
+                self.switch_to_interrupt_direct(
+                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
+                )
 
     def switch_to_interrupt(self, int_n: int, error_code: int = 0):
         """
@@ -2848,17 +3215,23 @@ class VirtualMachine(object):
     def switch_to_interrupt_direct(
         self,
         int_n: int,
-        error_code: int = 0,
         arg0: int = 0,
         arg1: int = 0,
         arg2: int = 0,
+        arg3: int = 0,
     ):
         """
-        Trigger an interrupt from within VM logic (e.g. a page fault).
-        Uses the same v3 frame format as switch_to_interrupt.
-        arg0, arg1, arg2 are informational and stored in SVSR regs, not the frame.
+        Trigger an interrupt from within VM logic (e.g. a page fault) or from an
+        asynchronous source (timer, IPI, TLB shootdown).  Uses the same v3 frame
+        format as switch_to_interrupt.  arg0..arg3 are delivered to the handler
+        through the read-only interrupt-argument system registers SVSR_INT_ARG0..3
+        (the frame error_code stays 0).
         """
-        self.switch_to_interrupt(int_n, error_code)
+        self.sys_regs[SVSR_INT_ARG0] = arg0 & 0xFFFFFFFFFFFFFFFF
+        self.sys_regs[SVSR_INT_ARG1] = arg1 & 0xFFFFFFFFFFFFFFFF
+        self.sys_regs[SVSR_INT_ARG2] = arg2 & 0xFFFFFFFFFFFFFFFF
+        self.sys_regs[SVSR_INT_ARG3] = arg3 & 0xFFFFFFFFFFFFFFFF
+        self.switch_to_interrupt(int_n, 0)
 
     def return_from_interrupt(self):
         """
@@ -2930,7 +3303,10 @@ class VirtualMachine(object):
                 else:
                     raise
             if apic.int_ready:
-                self.switch_to_interrupt_direct(apic.which_int, apic.arg0)
+                apic.int_ready = False
+                self.switch_to_interrupt_direct(
+                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
+                )
         return False
 
     def step(self):
@@ -2998,12 +3374,16 @@ class VirtualMachine(object):
 
     def set_flags_pri_priv(self, priority: int, priv_lvl: int):
         mem_mode = self.sys_regs[SVSR_FLAGS] & 0x3C00
-        self.sys_regs[SVSR_FLAGS] = priority | (priv_lvl << 8) | mem_mode
+        self.sys_regs[SVSR_FLAGS] = (
+            priority | (priv_lvl << 8) | (self.vaddr_msb_eq_priv << 9) | mem_mode
+        )
         self.priv_lvl = priv_lvl
         self.priority = priority
 
     def set_flags_pri_priv_mmd(self, priority: int, priv_lvl: int, mem_mode: int):
-        self.sys_regs[SVSR_FLAGS] = priority | (priv_lvl << 8) | (mem_mode << 10)
+        self.sys_regs[SVSR_FLAGS] = (
+            priority | (priv_lvl << 8) | (self.vaddr_msb_eq_priv << 9) | (mem_mode << 10)
+        )
         self.priv_lvl = priv_lvl
         self.priority = priority
         self.virt_mem_mode = mem_mode
@@ -3020,6 +3400,7 @@ class VirtualMachine(object):
         self.sys_regs[SVSR_FLAGS] = flags
         self.priv_lvl = (flags >> 8) & 3
         self.priority = flags & 0xFF
+        self.vaddr_msb_eq_priv = (flags >> 9) & 1
         self.virt_mem_mode = (flags >> 10) & 0xF
 
 
@@ -3280,7 +3661,7 @@ def insert_page_tables(
     PTE_MASK = 0xFFFFFFFFFFFFF000
     PTE_VALID_BIT = 0x001
     PTE_HUGE_BIT = 0x010
-    tlpte = vm.sys_regs[priv_lvl]
+    tlpte = vm.sys_regs[SVSRB_TLPTR + priv_lvl]
     from_bytes = int.from_bytes
     # TODO: copy the principal code of `VirtualMachine.walk_page`
     # TODO: instead of faulting when encountering an invalid page
@@ -3416,7 +3797,7 @@ def insert_page_tables_1(
     acquired = []
     from_bytes = int.from_bytes
     try:
-        tlpte = vm.sys_regs[priv_lvl]
+        tlpte = vm.sys_regs[SVSRB_TLPTR + priv_lvl]
         # TODO: copy the principal code of `VirtualMachine.walk_page`
         # TODO: instead of faulting when encountering an invalid page
         # TODO:   set the page pointer to the corresponding default the argunments to this function
@@ -3607,7 +3988,7 @@ def enable_virt_mem(
     vm.set_mem_mode(VM_4_LVL_9_BIT)
     tlpte = (alloc.get_and_alloc_next_false() << 12) | PTE_VALID_BIT
     adv_alloc = AdvPageAlloc(memoryview(alloc.byts), 0, alloc.max_addr, 4096)
-    vm.sys_regs[priv_lvl] = tlpte
+    vm.sys_regs[SVSRB_TLPTR + priv_lvl] = tlpte
     assert code_segment_start & 0xFFF == 0, "page alignment"
     assert code_segment_end & 0xFFF == 0, "page alignment"
     assert data_segment_start & 0xFFF == 0, "page alignment"

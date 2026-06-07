@@ -156,16 +156,44 @@
           <td></td>
         </tr>
         <tr>
+          <td>0x1E</td>
+          <td>TLB_SHOOTDOWN_DONE</td>
+          <td>
+            Asynchronous TLB-shootdown completion, delivered to the requester's
+            nominated <code>done_core</code>. Single requests report the original
+            descriptor; multi requests report the descriptor-array pointer/length.
+          </td>
+          <td>TLPTR (single) / entry-array pointer (multi)</td>
+          <td>Virtual address base (single) / num entries (multi)</td>
+          <td>Page count (single) / 0 (multi)</td>
+          <td></td>
+        </tr>
+        <tr>
           <td>0x1F</td>
           <td>TLB_SHOOTDOWN</td>
-          <td>TLB shootdown IPI — another core requests TLB invalidation</td>
-          <td>TLB pointer</td>
-          <td>Virtual address base</td>
-          <td>Region size</td>
-          <td></td>
+          <td>
+            TLB-shootdown request via the remote-interrupt fallback path: another
+            core asks this core to invalidate a range. The handler invalidates the
+            range with <a href="INVTLB.html">INVTLB_LOCAL</a> and acknowledges with
+            INVTLB_ACK using the supplied handle. (The recommended broadcast path
+            does <em>not</em> raise this interrupt.)
+          </td>
+          <td>TLPTR (single) / entry-array pointer (multi)</td>
+          <td>Virtual address base (single) / num entries (multi)</td>
+          <td>Page count (single) / 0 (multi)</td>
+          <td>Shootdown handle (for INVTLB_ACK)</td>
         </tr>
       </tbody>
     </table>
+    <h2>Interrupt arguments</h2>
+    <p>
+      The argument columns above are delivered to the handler through four
+      read-only, kernel-only system registers
+      <a href="SYSREG.html">SVSR_INT_ARG0..SVSR_INT_ARG3</a> (0x0E..0x11), which the
+      processor populates immediately before entering the handler. (Page-fault and
+      protection-fault details continue to be reported via
+      <code>SVSR_PAGE_FAULT_ADDR</code> as well.)
+    </p>
     <script>
       {
         const d = document.getElementById("registers");

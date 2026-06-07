@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <map>
 #ifdef defined(_WIN64) || (defined(_WIN32) && !defined(__CYGWIN__))
 #define STACK_VM_EXPORT __declspec(dllexport)
 #else
@@ -287,8 +288,15 @@ enum StackVM_SVSR
   SVSR_USER_TLPTR = 0x09,
   SVSR_CORE_ID = 0x0A,        // R/kernel: hardware core identifier
   SVSR_IPI = 0x0B,            // W/kernel: inter-processor interrupt
-  SVSR_CYCLE_COUNT = 0x0C,    // R/kernel: hardware cycle counter
-  SVSR_PAGE_FAULT_ADDR = 0x0D // R/kernel: virtual addr of last page fault
+  SVSR_CYCLE_COUNT = 0x0C,     // R/kernel: hardware cycle counter
+  SVSR_PAGE_FAULT_ADDR = 0x0D, // R/kernel: virtual addr of last page fault
+  // Interrupt-argument registers (R/kernel): populated by the VM when it
+  // delivers an interrupt that carries arguments (e.g. the TLB-shootdown
+  // descriptor for INT_TLB_SHOOTDOWN / INT_TLB_SHOOTDOWN_DONE).
+  SVSR_INT_ARG0 = 0x0E,
+  SVSR_INT_ARG1 = 0x0F,
+  SVSR_INT_ARG2 = 0x10,
+  SVSR_INT_ARG3 = 0x11
 };
 
 // INT128 sub-operation codes (byte following BC_INT128 opcode)
@@ -338,7 +346,29 @@ enum StackVM_INT
   INT_INVAL_SYSCALL = 0x0F,
   INT_HW_IO = 0x10,
   INT_TIMER = 0x11,
-  INT_TLB_SHOOTDOWN = 0x1F
+  INT_TLB_SHOOTDOWN_DONE = 0x1E, // async TLB-shootdown completion (-> done_core)
+  INT_TLB_SHOOTDOWN = 0x1F       // TLB-shootdown request (remote-interrupt path)
+};
+
+// INVTLB (opcode 0x0F) sub-operations, flags, and software-TLB constants.
+enum StackVM_INVTLB
+{
+  INVTLB_LOCAL = 0x00,
+  INVTLB_ALL_LOCAL = 0x01,
+  INVTLB_SINGLE = 0x02,
+  INVTLB_MULTI = 0x03,
+  INVTLB_ACK = 0x04,
+  // Flags byte for INVTLB_SINGLE / INVTLB_MULTI:
+  INVTLB_F_ASYNC = 0x01,
+  INVTLB_F_REMOTE_INT = 0x02,
+  INVTLB_F_ALSO_LOCAL = 0x04,
+  INVTLB_F_INCLUDE_INTERMEDIATE = 0x08,
+  // Bytes per INVTLB_MULTI descriptor: {tlptr, vaddr_base, page_count}.
+  INVTLB_ENTRY_SIZE = 24,
+  // TLB validated-permission mask bits (match MRQ_READ/WRITE/EXEC values).
+  TLBP_R = 1,
+  TLBP_W = 2,
+  TLBP_X = 4
 };
 
 enum StackVM_MRQ
@@ -617,6 +647,10 @@ const uint8_t SVSR_REGISTER_PERMS[] = {
     0b0100, // 0x0B IPI (W/kernel only)
     0b0001, // 0x0C CYCLE_COUNT (R/kernel only)
     0b0001, // 0x0D PAGE_FAULT_ADDR (R/kernel only)
+    0b0001, // 0x0E INT_ARG0 (R/kernel only)
+    0b0001, // 0x0F INT_ARG1 (R/kernel only)
+    0b0001, // 0x10 INT_ARG2 (R/kernel only)
+    0b0001, // 0x11 INT_ARG3 (R/kernel only)
 };
 
 const uint64_t SVSR_FLAGS_ILLEGAL_BITS_WRITE_MASK[] = {
@@ -636,8 +670,14 @@ protected:
   bool vaddr_msb_eq_priv;
   uint8_t virt_mem_mode;
   uint64_t virt_error_data[4]; // virt_error_data[0] & 0xFF is the virt_error_code
-  uint64_t sys_regs[14];
+  uint64_t sys_regs[18];
   BaseStackVM_Env *env;
+  // ---- Software TLB ---------------------------------------------------------
+  // Key: (tlptr, page_aligned_vaddr).  Value: (phys_page_base, validated mask).
+  // The TLB may only hold entries for the two currently-active TLPTRs; this is
+  // enforced lazily by tlb_check_switch() on each translation.
+  std::map<std::pair<uint64_t, uint64_t>, std::pair<uint64_t, uint8_t>> tlb;
+  uint64_t tlb_tag[2]; // last-seen KERNEL/USER TLPTR; UINT64_MAX = unset
   uint64_t ax;
   typedef void (*VirtSyscall)(uint64_t syscall_n, StackVM_TrapException::SimpleStruct *err);
   VirtSyscall virt_syscall;
@@ -660,6 +700,7 @@ public:
     {
       reg = 0;
     }
+    tlb_tag[0] = tlb_tag[1] = UINT64_MAX;
     calc_flags();
   }
   void set_memory(uint8_t *mem, size_t size)
@@ -883,37 +924,116 @@ protected:
     check_perm_set_or_clr_error(pte3, pte4_index, pte4_ptr, pte4, virt_addr, mrq_perms, 4);
     return (pte4 & PTE4_HMASK) | (virt_addr & PTE4_LMASK);
   }
+  static inline uint8_t mrq_to_tlbp(uint8_t mrq)
+  {
+    // MRQ_READ=1, MRQ_WRITE=2, MRQ_EXEC=4 already equal the TLBP_* mask bits.
+    return (mrq == MRQ_DONT_CHECK) ? 0 : mrq;
+  }
+  void tlb_invalidate_range(uint64_t tlptr, uint64_t vaddr_base, uint64_t page_count)
+  {
+    uint64_t page_size =
+        (virt_mem_mode == VM_DISABLED) ? 4096 : (pte_lmasks[virt_mem_mode] + 1);
+    uint64_t base = vaddr_base & ~(page_size - 1);
+    for (uint64_t i = 0; i < page_count; ++i)
+    {
+      tlb.erase(std::make_pair(tlptr, base + i * page_size));
+    }
+  }
+  void tlb_flush_tlptr(uint64_t tlptr)
+  {
+    for (auto it = tlb.begin(); it != tlb.end();)
+    {
+      if (it->first.first == tlptr)
+        it = tlb.erase(it);
+      else
+        ++it;
+    }
+  }
+  void tlb_flush_all()
+  {
+    tlb.clear();
+    tlb_tag[0] = tlb_tag[1] = UINT64_MAX;
+  }
+  void tlb_check_switch()
+  {
+    // Enforce the invariant that the TLB only holds entries for the two active
+    // TLPTRs: when a TLPTR changes, drop entries for the replaced one (unless
+    // it is still referenced by the other slot).
+    if (virt_mem_mode == VM_DISABLED)
+      return;
+    uint64_t k = sys_regs[SVSR_KERNEL_TLPTR];
+    uint64_t u = sys_regs[SVSR_USER_TLPTR];
+    if (k != tlb_tag[0])
+    {
+      if (tlb_tag[0] != UINT64_MAX && tlb_tag[0] != u)
+        tlb_flush_tlptr(tlb_tag[0]);
+      tlb_tag[0] = k;
+    }
+    if (u != tlb_tag[1])
+    {
+      if (tlb_tag[1] != UINT64_MAX && tlb_tag[1] != k)
+        tlb_flush_tlptr(tlb_tag[1]);
+      tlb_tag[1] = u;
+    }
+  }
   inline uint64_t walk_page(uint64_t virt_addr, uint64_t tlpte, uint8_t mrq_perms)
   {
-    // Later_TODO: use __m256i _mm256_cmpeq_epi64 (__m256i a, __m256i b) or some other
-    //   similar vector intrinsic to emulate TLB for fast vaddr translation
     if (virt_mem_mode == VM_DISABLED)
     {
       return virt_addr;
     }
+    // Consult the software TLB.  A cached entry stays stale until invalidated by
+    // INVTLB; a miss (or an access mode not yet validated for the entry) falls
+    // through to a full page-table walk and caches the successful result.
+    const uint64_t page_mask = pte_hmasks[virt_mem_mode];
+    const uint64_t index_mask = pte_lmasks[virt_mem_mode];
+    const uint64_t vpn = virt_addr & page_mask;
+    const uint8_t pbit = mrq_to_tlbp(mrq_perms);
+    const std::pair<uint64_t, uint64_t> key(tlpte, vpn);
+    auto it = tlb.find(key);
+    if (it != tlb.end() && (pbit == 0 || (it->second.second & pbit)))
+    {
+      virt_error_data[0] = 0;
+      return it->second.first | (virt_addr & index_mask);
+    }
+    uint64_t phys;
     if (virt_mem_mode == VM_4_LVL_9_BIT)
     {
-      return vm_4_lvl_n_bit_walk_page<9>(virt_addr, tlpte, mrq_perms);
+      phys = vm_4_lvl_n_bit_walk_page<9>(virt_addr, tlpte, mrq_perms);
     }
     else if (virt_mem_mode == VM_4_LVL_10_BIT)
     {
-      return vm_4_lvl_n_bit_walk_page<10>(virt_addr, tlpte, mrq_perms);
+      phys = vm_4_lvl_n_bit_walk_page<10>(virt_addr, tlpte, mrq_perms);
     }
     else if (virt_mem_mode == VM_4_LVL_11_BIT)
     {
-      return vm_4_lvl_n_bit_walk_page<11>(virt_addr, tlpte, mrq_perms);
+      phys = vm_4_lvl_n_bit_walk_page<11>(virt_addr, tlpte, mrq_perms);
     }
     else if (virt_mem_mode == VM_4_LVL_12_BIT)
     {
-      return vm_4_lvl_n_bit_walk_page<12>(virt_addr, tlpte, mrq_perms);
+      phys = vm_4_lvl_n_bit_walk_page<12>(virt_addr, tlpte, mrq_perms);
     }
     else
     {
       throw std::runtime_error("Unsupported virtual memory mode");
     }
+    if (virt_error_data[0] == 0)
+    {
+      if (it != tlb.end())
+      {
+        it->second.first = phys & page_mask;
+        it->second.second |= pbit;
+      }
+      else
+      {
+        tlb.emplace(key, std::make_pair(phys & page_mask, pbit));
+      }
+    }
+    return phys;
   }
   inline uint64_t walk_page(uint64_t virt_addr, uint8_t mrq_perms)
   {
+    tlb_check_switch();
     bool msb = virt_addr >> 63;
     uint64_t phys_addr = 0;
     if (vaddr_msb_eq_priv)
@@ -2890,22 +3010,62 @@ protected:
     {
       if (priv_lvl != PRIV_KERNEL)
         throw StackVM_TrapException(INT_PROTECT_FAULT);
-      if (extra == 0x00)
+      switch (extra)
       {
-        // INVTLB_BEGIN: pop tlptr, vaddr_base, vaddr_size
-        uint64_t vaddr_size = pop_uint64();
+      case INVTLB_LOCAL:
+      {
+        // pop order: count, base, tlptr (push order: tlptr, base, count)
+        uint64_t page_count = pop_uint64();
         uint64_t vaddr_base = pop_uint64();
-        uint64_t tlptr_val = pop_uint64();
-        (void)tlptr_val;
-        (void)vaddr_base;
-        (void)vaddr_size; // single-core: no-op
+        uint64_t tlptr = pop_uint64();
+        tlb_invalidate_range(tlptr, vaddr_base, page_count);
       }
-      else if (extra == 0x01)
+      break;
+      case INVTLB_ALL_LOCAL:
+        tlb_flush_all();
+        break;
+      case INVTLB_SINGLE:
       {
-        // INVTLB_COMMIT: no-op on single-core
+        const uint8_t flags = get_instr_uint8();
+        uint64_t done_core = (flags & INVTLB_F_ASYNC) ? pop_uint64() : 0;
+        (void)done_core;
+        uint64_t page_count = pop_uint64();
+        uint64_t vaddr_base = pop_uint64();
+        uint64_t tlptr = pop_uint64();
+        if (flags & INVTLB_F_ALSO_LOCAL)
+          tlb_invalidate_range(tlptr, vaddr_base, page_count);
+        // This is a single-core core: cross-core broadcast, the remote-interrupt
+        // fallback, and async completion are driven by the multi-core controller
+        // (see the Python reference and TlbShootdown.html); here they are no-ops.
       }
-      else
+      break;
+      case INVTLB_MULTI:
       {
+        const uint8_t flags = get_instr_uint8();
+        uint64_t done_core = (flags & INVTLB_F_ASYNC) ? pop_uint64() : 0;
+        (void)done_core;
+        uint64_t num_entries = pop_uint64();
+        uint64_t entry_ptr = pop_uint64();
+        if (flags & INVTLB_F_ALSO_LOCAL)
+        {
+          for (uint64_t i = 0; i < num_entries; ++i)
+          {
+            uint64_t base_e = entry_ptr + i * INVTLB_ENTRY_SIZE;
+            uint64_t tlptr = get_uint64(base_e);
+            uint64_t vaddr_base = get_uint64(base_e + 8);
+            uint64_t page_count = get_uint64(base_e + 16);
+            tlb_invalidate_range(tlptr, vaddr_base, page_count);
+          }
+        }
+      }
+      break;
+      case INVTLB_ACK:
+      {
+        uint64_t handle = pop_uint64();
+        (void)handle; // single-core: nothing to acknowledge
+      }
+      break;
+      default:
         throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
       }
     }
