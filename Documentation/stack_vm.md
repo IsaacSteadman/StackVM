@@ -224,3 +224,24 @@ boundary, subject to the following gating against the receiving core's
 Multiple pending sources are queued (not a single-slot mailbox) and drained
 most-urgent-first, FIFO among equal priorities, so a burst of interrupts is not
 dropped.
+
+Programmable interval timer (scheduler tick)
+--------------------------------------------
+
+Each core has a programmable interval timer whose timebase is the core's retired
+instruction count. The CPU increments the read-only `SVSR_CYCLE_COUNT` register
+(0x0C) by one per retired instruction (wrapping on 64-bit overflow), and the
+timer counts down against the same boundary. When its countdown reaches zero it
+posts `INT_TIMER` (0x11) into the local interrupt controller, where the post is
+then subject to the ordinary enable/priority gating above, and -- if periodic --
+reloads its interval; a one-shot timer disarms itself after firing. While the
+timer is disabled (or its interval is 0) it neither counts nor posts.
+
+`INT_TIMER` is the periodic source the kernel uses for its scheduler tick and
+preemption: programming the interval sets the tick period (in cycles), and the
+gating means a timer interrupt cannot preempt a handler running at an equal or
+more-urgent priority -- it is held pending until `IRET` lowers the level. The
+timer's delivery priority is the priority field of the `INT_TIMER` ISR-table
+entry unless the source pins one explicitly. (The interval is host-programmed in
+the emulator today; a kernel-facing MMIO timer-register interface arrives with
+the MMIO device framework.)

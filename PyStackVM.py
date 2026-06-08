@@ -1730,6 +1730,114 @@ class AdvProgIntCtl(object):
         return entry
 
 
+class ProgrammableIntervalTimer(object):
+    """Programmable interval timer (PIT) that drives the scheduler tick.
+
+    A single periodic/one-shot countdown timer wired to a core's local
+    interrupt controller (AdvProgIntCtl).  Its timebase is the core's retired
+    instruction count: the CPU calls tick() once per executed instruction -- the
+    same boundary at which SVSR_CYCLE_COUNT is incremented.  When the internal
+    countdown reaches zero the timer posts INT_TIMER (0x11) into the APIC (where
+    it is then subject to the normal FLAGS enable/priority gating) and, if
+    periodic, reloads from ``interval``; a one-shot timer disarms itself after it
+    fires.
+
+    The timer is *masked* (counts/posts nothing) while ``enabled`` is False or
+    ``interval`` is 0.  ``interval`` is the number of cycles between successive
+    INT_TIMER posts.  When ``priority`` is None the delivered interrupt inherits
+    the priority of the INT_TIMER ISR-table entry (the normal unpinned path);
+    pin a value to force a fixed delivery priority.
+
+    Programming is a host-side API for now (program()/arm()/disable()); a
+    kernel-facing MMIO timer-register interface arrives with the D5 device
+    framework.
+    """
+
+    __slots__ = [
+        "apic",
+        "interval",
+        "periodic",
+        "enabled",
+        "priority",
+        "_counter",
+        "fire_count",
+    ]
+
+    def __init__(
+        self,
+        apic: AdvProgIntCtl,
+        interval: int = 0,
+        periodic: bool = True,
+        enabled: bool = False,
+        priority=None,
+    ):
+        self.apic = apic
+        self.priority = priority
+        self.fire_count = 0  # number of INT_TIMER interrupts posted so far
+        self.interval = 0
+        self.periodic = True
+        self.enabled = False
+        self._counter = 0
+        self.program(interval, periodic=periodic, enabled=enabled, priority=priority)
+
+    def program(self, interval: int, periodic: bool = True, enabled: bool = True,
+                priority=None):
+        """(Re)program the timer.
+
+        Sets the reload ``interval`` (in cycles), the periodic/one-shot mode and
+        whether it is armed, and reloads the countdown to a full interval.  A
+        zero/negative interval leaves the timer disabled.  ``priority`` updates
+        the pinned delivery priority when not None.
+        """
+        self.interval = int(interval)
+        self.periodic = bool(periodic)
+        if priority is not None:
+            self.priority = priority
+        self.enabled = bool(enabled) and self.interval > 0
+        self._counter = self.interval
+
+    def arm(self):
+        """Re-arm a programmed timer without changing its interval/mode.  Reloads
+        the countdown only if it had already expired (a one-shot that fired)."""
+        if self.interval > 0:
+            self.enabled = True
+            if self._counter <= 0:
+                self._counter = self.interval
+
+    def disable(self):
+        """Mask the timer without discarding its programmed interval/mode."""
+        self.enabled = False
+
+    @property
+    def remaining(self) -> int:
+        """Cycles until the next INT_TIMER post (0 while masked)."""
+        return self._counter if (self.enabled and self.interval > 0) else 0
+
+    def tick(self, cycles: int = 1):
+        """Advance the timebase by ``cycles`` retired instructions.
+
+        Posts one INT_TIMER per interval boundary crossed and returns the number
+        posted (0 while masked).  Driven once per instruction the common case
+        crosses at most one boundary; a larger ``cycles`` step still posts one
+        interrupt per boundary, mirroring a real timer whose backlog the APIC
+        collapses under masking.
+        """
+        if not self.enabled or self.interval <= 0:
+            return 0
+        self._counter -= int(cycles)
+        posted = 0
+        while self._counter <= 0:
+            self.apic.trigger(INT_TIMER, priority=self.priority)
+            self.fire_count += 1
+            posted += 1
+            if not self.periodic:
+                self.enabled = False
+                self._counter = 0
+                break
+            self._counter += self.interval
+        return posted
+
+
 class MultiCoreController(object):
     """Minimal coherence / IPI bus shared by a set of StackVM cores.
 
@@ -2171,6 +2279,10 @@ class VirtualMachine(object):
         self.objects = ObjectIdAllocator(0, 1 << 64)
         self.pyg_index = -1
         self.apic = None
+        # Optional ProgrammableIntervalTimer driving INT_TIMER / the scheduler
+        # tick.  Advanced once per retired instruction by the interrupt-aware
+        # execution loops (and step); None means no timer is attached.
+        self.timer = None
         self.ipi_log = []
         self.ipi_controller = None
         self.virt_mem_mode = VM_DISABLED
@@ -3251,10 +3363,14 @@ class VirtualMachine(object):
                 else:
                     raise
 
-    def execute_with_interrupts(self, apic: AdvProgIntCtl):
+    def execute_with_interrupts(self, apic: AdvProgIntCtl, timer=None):
         BC_Dispatch = self.BC_Dispatch
         get_instr_dat = self.get_instr_dat
         self.apic = apic
+        if timer is not None:
+            self.timer = timer
+        timer = self.timer
+        sys_regs = self.sys_regs
         while self.running:
             code = get_instr_dat(1, 0)
             try:
@@ -3265,6 +3381,11 @@ class VirtualMachine(object):
                     self.trap(INT_INVAL_OPCODE, code, self.ip)
                 else:
                     raise
+            sys_regs[SVSR_CYCLE_COUNT] = (
+                sys_regs[SVSR_CYCLE_COUNT] + 1
+            ) & 0xFFFFFFFFFFFFFFFF
+            if timer is not None:
+                timer.tick()
             if apic.pending():
                 self.deliver_pending_interrupt(apic)
 
@@ -3427,10 +3548,14 @@ class VirtualMachine(object):
                     raise
         return False
 
-    def debug_with_interrupts(self, brk_points, apic: AdvProgIntCtl):
+    def debug_with_interrupts(self, brk_points, apic: AdvProgIntCtl, timer=None):
         BC_Dispatch = self.BC_Dispatch
         get_instr_dat = self.get_instr_dat
         self.apic = apic
+        if timer is not None:
+            self.timer = timer
+        timer = self.timer
+        sys_regs = self.sys_regs
         while self.running:
             if self.ip in brk_points:
                 return True
@@ -3443,6 +3568,11 @@ class VirtualMachine(object):
                     self.trap(INT_INVAL_OPCODE, code, self.ip)
                 else:
                     raise
+            sys_regs[SVSR_CYCLE_COUNT] = (
+                sys_regs[SVSR_CYCLE_COUNT] + 1
+            ) & 0xFFFFFFFFFFFFFFFF
+            if timer is not None:
+                timer.tick()
             if apic.pending():
                 self.deliver_pending_interrupt(apic)
         return False
@@ -3459,6 +3589,11 @@ class VirtualMachine(object):
                 self.trap(INT_INVAL_OPCODE, code, self.ip)
             else:
                 raise
+        self.sys_regs[SVSR_CYCLE_COUNT] = (
+            self.sys_regs[SVSR_CYCLE_COUNT] + 1
+        ) & 0xFFFFFFFFFFFFFFFF
+        if self.timer is not None:
+            self.timer.tick()
         return True
 
     def get_stack_list(self, most_recent_call_last=False):
