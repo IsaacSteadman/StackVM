@@ -390,13 +390,10 @@ def boot_kernel(
     Returns ``(vm, image)`` with the VM halted at the kernel entry point in
     kernel mode (priv 0), MMU off, ``SVSR_SDP`` pointing at the StartupData and a
     kernel stack at the top of RAM.  The caller runs it (``vm.execute()`` or via
-    the debugger).  Only the Python backend is supported (C++ parity = D8).
+    the debugger).
     """
-    if backend != "python":
-        raise NotImplementedError(
-            "boot_kernel only supports the 'python' backend; C++ boot/SMP parity "
-            "is tracked as workstream D8"
-        )
+    if backend not in ("python", "cpp"):
+        raise ValueError("backend must be 'python' or 'cpp'")
 
     from .PyStackVM import (
         VM_DISABLED,
@@ -405,8 +402,11 @@ def boot_kernel(
         SVSR_KERNEL_BP,
         SVSR_KERNEL_SP,
         SVSR_SDP,
-        VirtualMachine,
     )
+    if backend == "cpp":
+        from .CppStackVM import VirtualMachine
+    else:
+        from .PyStackVM import VirtualMachine
 
     kernel_image = bytes(kernel_image)
     image = build_boot_image(
@@ -420,7 +420,7 @@ def boot_kernel(
         boot_core_id=boot_core_id,
     )
 
-    vm = VirtualMachine(vm_size, 0)
+    vm = VirtualMachine(vm_size) if backend == "cpp" else VirtualMachine(vm_size, 0)
     if len(vm.memory) < vm_size:
         # Defensive: ensure the full physical address space is backed.
         vm.memory.extend(b"\0" * (vm_size - len(vm.memory)))
@@ -431,10 +431,14 @@ def boot_kernel(
 
     # Enter the kernel: kernel privilege, MMU off, interrupts disabled, SDP set,
     # entry at the start of the image, kernel stack at the top of RAM.
-    vm.priv_lvl = 0
-    vm.virt_mem_mode = VM_DISABLED
-    vm.priority = 255
-    vm.sys_regs[SVSR_FLAGS] = vm.priority | (vm.priv_lvl << 8)
+    flags = 255 | (0 << 8) | (VM_DISABLED << 10)
+    if backend == "python":
+        vm.priv_lvl = 0
+        vm.virt_mem_mode = VM_DISABLED
+        vm.priority = 255
+        vm.sys_regs[SVSR_FLAGS] = flags
+    else:
+        vm.set_flags(flags)
     vm.sys_regs[SVSR_SDP] = image.startup_data_addr
     vm.sys_regs[SVSR_CORE_ID] = boot_core_id
     vm.sys_regs[SVSR_KERNEL_SP] = vm_size

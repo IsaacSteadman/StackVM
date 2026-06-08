@@ -7,7 +7,10 @@
 #include <vector>
 #include <memory>
 #include <map>
-#ifdef defined(_WIN64) || (defined(_WIN32) && !defined(__CYGWIN__))
+#include <tuple>
+#include <cstring>
+#include <stdexcept>
+#if defined(_WIN64) || (defined(_WIN32) && !defined(__CYGWIN__))
 #define STACK_VM_EXPORT __declspec(dllexport)
 #else
 #define STACK_VM_EXPORT
@@ -462,7 +465,7 @@ public:
   }
   inline void readatinto(size_t off, uint8_t *buf, size_t bufsize)
   {
-    if (off + bufsize < size_first)
+    if (off + bufsize <= size_first)
     {
       memcpy(buf, first + off, bufsize);
     }
@@ -481,11 +484,11 @@ public:
   template <typename T>
   inline void write(T data, size_t idx = 0)
   {
-    if (idx + sizeof(T) >= (size_first + size_next))
+    if (idx + sizeof(T) > (size_first + size_next))
     {
       throw std::range_error("MemoryView index out of bounds");
     }
-    if (idx < size_first && idx + sizeof(T) < size_first)
+    if (idx < size_first && idx + sizeof(T) <= size_first)
     {
       *(T *)(first + idx) = data;
     }
@@ -511,11 +514,11 @@ public:
   template <typename T>
   inline T read(size_t idx = 0)
   {
-    if (idx + sizeof(T) >= (size_first + size_next))
+    if (idx + sizeof(T) > (size_first + size_next))
     {
       throw std::range_error("MemoryView index out of bounds");
     }
-    if (idx < size_first && idx + sizeof(T) < size_first)
+    if (idx < size_first && idx + sizeof(T) <= size_first)
     {
       return *(T *)(first + idx);
     }
@@ -622,6 +625,8 @@ enum SvsrFlagsMasks
   SVSR_FLAGS_VIRT_MEM_MD_MASK = 0b11110000000000
 };
 
+constexpr uint64_t FLAGS_INT_ENABLE = 1ULL << 14;
+
 enum PrivLvl
 {
   PRIV_KERNEL = 0,
@@ -664,6 +669,12 @@ const uint64_t SVSR_FLAGS_ILLEGAL_BITS_WRITE_MASK[] = {
 class StackVM
 {
 protected:
+  struct PendingInterrupt
+  {
+    uint8_t int_n;
+    uint64_t arg0, arg1, arg2, arg3;
+  };
+
   uint64_t sp, bp, ip;
   uint8_t *memory;
   size_t memsize;
@@ -681,6 +692,7 @@ protected:
   // enforced lazily by tlb_check_switch() on each translation.
   std::map<std::pair<uint64_t, uint64_t>, std::pair<uint64_t, uint8_t>> tlb;
   uint64_t tlb_tag[2]; // last-seen KERNEL/USER TLPTR; UINT64_MAX = unset
+  vector<PendingInterrupt> pending_interrupts;
   uint64_t ax;
   typedef void (*VirtSyscall)(uint64_t syscall_n, StackVM_TrapException::SimpleStruct *err);
   VirtSyscall virt_syscall;
@@ -699,6 +711,7 @@ public:
         virt_syscall(virt_syscall),
         virt_mem_mode(0)
   {
+    int_ready = false;
     for (uint64_t &reg : sys_regs)
     {
       reg = 0;
@@ -1641,6 +1654,97 @@ protected:
     ip = pop_uint64();
     bp = pop_uint64();
   }
+
+  virtual void on_ipi_write(uint64_t value)
+  {
+    (void)value;
+  }
+
+  virtual void on_tlb_shootdown(const vector<std::tuple<uint64_t, uint64_t, uint64_t>> &descs,
+                                uint8_t flags,
+                                uint64_t done_core,
+                                bool has_done_core,
+                                uint64_t multi_ptr,
+                                uint64_t multi_len)
+  {
+    (void)descs;
+    (void)flags;
+    (void)done_core;
+    (void)has_done_core;
+    (void)multi_ptr;
+    (void)multi_len;
+  }
+
+  void post_interrupt(uint8_t int_n,
+                      uint64_t arg0 = 0,
+                      uint64_t arg1 = 0,
+                      uint64_t arg2 = 0,
+                      uint64_t arg3 = 0)
+  {
+    pending_interrupts.push_back({int_n, arg0, arg1, arg2, arg3});
+    int_ready = true;
+  }
+
+  uint8_t interrupt_priority(uint8_t int_n) const
+  {
+    uint64_t isr_base = sys_regs[SVSR_ISR];
+    uint64_t entry = isr_base + uint64_t(int_n) * 16;
+    if (isr_base == 0 || entry + 8 > memsize)
+      return 0;
+    return (*(uint64_t *)(memory + entry)) & SVSR_FLAGS_PRI_MASK;
+  }
+
+  bool deliver_pending_interrupt()
+  {
+    if (pending_interrupts.empty())
+    {
+      int_ready = false;
+      return false;
+    }
+    const bool enabled = (sys_regs[SVSR_FLAGS] & FLAGS_INT_ENABLE) != 0;
+    const uint8_t cur_priority = sys_regs[SVSR_FLAGS] & SVSR_FLAGS_PRI_MASK;
+    size_t chosen = pending_interrupts.size();
+    uint8_t chosen_priority = 0xFF;
+    for (size_t i = 0; i < pending_interrupts.size(); ++i)
+    {
+      if (pending_interrupts[i].int_n == INT_NMI)
+      {
+        chosen = i;
+        break;
+      }
+      if (enabled)
+      {
+        uint8_t pri = interrupt_priority(pending_interrupts[i].int_n);
+        if (pri < cur_priority && (chosen == pending_interrupts.size() || pri < chosen_priority))
+        {
+          chosen = i;
+          chosen_priority = pri;
+        }
+      }
+    }
+    if (chosen == pending_interrupts.size())
+    {
+      int_ready = true;
+      return false;
+    }
+
+    PendingInterrupt entry = pending_interrupts[chosen];
+    pending_interrupts.erase(pending_interrupts.begin() + chosen);
+    int_ready = !pending_interrupts.empty();
+    sys_regs[SVSR_INT_ARG0] = entry.arg0;
+    sys_regs[SVSR_INT_ARG1] = entry.arg1;
+    sys_regs[SVSR_INT_ARG2] = entry.arg2;
+    sys_regs[SVSR_INT_ARG3] = entry.arg3;
+    trap(entry.int_n, ip, bp, sp, sys_regs[SVSR_FLAGS], 0);
+    return true;
+  }
+
+  void retire_instruction()
+  {
+    sys_regs[SVSR_CYCLE_COUNT] += 1;
+    deliver_pending_interrupt();
+  }
+
   // Switches from the current privilege level to new_priv_lvl.
   // Saves current sp to sys_regs[SVSRB_SP + priv_lvl] and
   // loads sys_regs[SVSRB_SP + new_priv_lvl] into sp.
@@ -1685,14 +1789,7 @@ protected:
     case BC_NOP:
       break;
     case BC_HLT:
-      if (priv_lvl == 0)
-      {
-        running = false;
-      }
-      else
-      {
-        throw StackVM_TrapException(INT_INVAL_OPCODE, code | (extra << 8));
-      }
+      running = false;
       break;
     case BC_EQ0:
       push(uint8_t(pop_int8() == 0));
@@ -2442,7 +2539,7 @@ protected:
       case BCR_SYSREG:
       {
         uint8_t which = get_instr_uint8();
-        if (which >= 14 || ((SVSR_REGISTER_PERMS[which] & (1 << priv_lvl)) == 0))
+        if (which >= sizeof(SVSR_REGISTER_PERMS) || ((SVSR_REGISTER_PERMS[which] & (1 << priv_lvl)) == 0))
         {
           throw StackVM_TrapException(INT_PROTECT_FAULT);
         }
@@ -2463,12 +2560,59 @@ protected:
       case BCR_ATOMIC_FOR:
       case BCR_ATOMIC_FXOR:
       {
-        // Consume ordering byte (ignored on single-core)
+        // Serialized SMP: ordering is provided by the deterministic host step
+        // order, so the encoded memory-order byte is consumed but not otherwise
+        // interpreted.
         get_instr_uint8();
-        // For simplicity on single-core, treat as regular LOAD ABS_S8
         addr = pop_uint64();
+        uint64_t old_val = 0;
+        uint64_t new_val = 0;
+        uint64_t operand = 0;
         get_into(addr, buf, size);
-        push_from(buf, size);
+        memcpy(&old_val, buf, size);
+        switch (extra & 0x1F)
+        {
+        case BCR_ATOMIC_LOAD:
+          push_from(buf, size);
+          break;
+        case BCR_ATOMIC_XCHG:
+          pop_into(buf, size);
+          set_from(addr, buf, size);
+          push_from((uint8_t *)&old_val, size);
+          break;
+        case BCR_ATOMIC_CAS:
+        {
+          uint64_t expected = 0;
+          uint64_t desired = 0;
+          pop_into((uint8_t *)&expected, size);
+          pop_into((uint8_t *)&desired, size);
+          if (old_val == expected)
+          {
+            set_from(addr, (uint8_t *)&desired, size);
+          }
+          push_from((uint8_t *)&old_val, size);
+        }
+        break;
+        case BCR_ATOMIC_FADD:
+        case BCR_ATOMIC_FSUB:
+        case BCR_ATOMIC_FAND:
+        case BCR_ATOMIC_FOR:
+        case BCR_ATOMIC_FXOR:
+          pop_into((uint8_t *)&operand, size);
+          if ((extra & 0x1F) == BCR_ATOMIC_FADD)
+            new_val = old_val + operand;
+          else if ((extra & 0x1F) == BCR_ATOMIC_FSUB)
+            new_val = old_val - operand;
+          else if ((extra & 0x1F) == BCR_ATOMIC_FAND)
+            new_val = old_val & operand;
+          else if ((extra & 0x1F) == BCR_ATOMIC_FOR)
+            new_val = old_val | operand;
+          else
+            new_val = old_val ^ operand;
+          set_from(addr, (uint8_t *)&new_val, size);
+          push_from((uint8_t *)&old_val, size);
+          break;
+        }
       }
       break;
       default:
@@ -2533,12 +2677,17 @@ protected:
       case BCR_SYSREG:
       {
         uint8_t which = get_instr_uint8();
-        if (which >= 14 || ((SVSR_REGISTER_PERMS[which] & (4 << priv_lvl)) == 0))
+        if (which >= sizeof(SVSR_REGISTER_PERMS) || ((SVSR_REGISTER_PERMS[which] & (4 << priv_lvl)) == 0))
         {
           throw StackVM_TrapException(INT_PROTECT_FAULT, true);
         }
         const uint64_t val = pop_uint64();
-        if (which == SVSR_FLAGS)
+        if (which == SVSR_IPI)
+        {
+          sys_regs[which] = val;
+          on_ipi_write(val);
+        }
+        else if (which == SVSR_FLAGS)
         {
           const uint64_t illegal_mask = SVSR_FLAGS_ILLEGAL_BITS_WRITE_MASK[priv_lvl];
           if ((illegal_mask & val) != (illegal_mask & sys_regs[SVSR_FLAGS]))
@@ -2582,6 +2731,7 @@ protected:
       }
     }
     break;
+    case BC_CALL_E:
       {
         if ((extra & BCCE_SYSCALL) > 0)
         {
@@ -3030,36 +3180,45 @@ protected:
       case INVTLB_SINGLE:
       {
         const uint8_t flags = get_instr_uint8();
-        uint64_t done_core = (flags & INVTLB_F_ASYNC) ? pop_uint64() : 0;
-        (void)done_core;
+        bool has_done_core = (flags & INVTLB_F_ASYNC) != 0;
+        uint64_t done_core = has_done_core ? pop_uint64() : 0;
         uint64_t page_count = pop_uint64();
         uint64_t vaddr_base = pop_uint64();
         uint64_t tlptr = pop_uint64();
         if (flags & INVTLB_F_ALSO_LOCAL)
           tlb_invalidate_range(tlptr, vaddr_base, page_count);
-        // This is a single-core core: cross-core broadcast, the remote-interrupt
-        // fallback, and async completion are driven by the multi-core controller
-        // (see the Python reference and TlbShootdown.html); here they are no-ops.
+        vector<std::tuple<uint64_t, uint64_t, uint64_t>> descs;
+        descs.emplace_back(tlptr, vaddr_base, page_count);
+        on_tlb_shootdown(descs, flags, done_core, has_done_core, 0, 0);
       }
       break;
       case INVTLB_MULTI:
       {
         const uint8_t flags = get_instr_uint8();
-        uint64_t done_core = (flags & INVTLB_F_ASYNC) ? pop_uint64() : 0;
-        (void)done_core;
+        bool has_done_core = (flags & INVTLB_F_ASYNC) != 0;
+        uint64_t done_core = has_done_core ? pop_uint64() : 0;
         uint64_t num_entries = pop_uint64();
         uint64_t entry_ptr = pop_uint64();
+        vector<std::tuple<uint64_t, uint64_t, uint64_t>> descs;
+        descs.reserve(num_entries);
+        for (uint64_t i = 0; i < num_entries; ++i)
+        {
+          uint64_t base_e = entry_ptr + i * INVTLB_ENTRY_SIZE;
+          uint64_t tlptr = get_uint64(base_e);
+          uint64_t vaddr_base = get_uint64(base_e + 8);
+          uint64_t page_count = get_uint64(base_e + 16);
+          descs.emplace_back(tlptr, vaddr_base, page_count);
+        }
         if (flags & INVTLB_F_ALSO_LOCAL)
         {
-          for (uint64_t i = 0; i < num_entries; ++i)
+          for (const auto &desc : descs)
           {
-            uint64_t base_e = entry_ptr + i * INVTLB_ENTRY_SIZE;
-            uint64_t tlptr = get_uint64(base_e);
-            uint64_t vaddr_base = get_uint64(base_e + 8);
-            uint64_t page_count = get_uint64(base_e + 16);
+            uint64_t tlptr, vaddr_base, page_count;
+            std::tie(tlptr, vaddr_base, page_count) = desc;
             tlb_invalidate_range(tlptr, vaddr_base, page_count);
           }
         }
+        on_tlb_shootdown(descs, flags, done_core, has_done_core, entry_ptr, num_entries);
       }
       break;
       case INVTLB_ACK:
@@ -3865,6 +4024,7 @@ public:
       try
       {
         execute_once();
+        retire_instruction();
       }
       catch (StackVM_TrapException &exc)
       {
@@ -3881,16 +4041,26 @@ public:
 
 extern "C"
 {
+  struct StackVMMultiCoreController;
+
   // StackVMExported: thin public subclass used by the C export API
   struct StackVMExported : public StackVM
   {
     std::unique_ptr<uint8_t[]> owned_memory;
+    StackVMMultiCoreController *controller;
 
-    explicit StackVMExported(size_t mem_size) : StackVM(nullptr)
+    explicit StackVMExported(size_t mem_size) : StackVM(nullptr), controller(nullptr)
     {
       owned_memory = std::make_unique<uint8_t[]>(mem_size);
+      memset(owned_memory.get(), 0, mem_size);
       set_memory(owned_memory.get(), mem_size);
       memsize = mem_size; // set_memory doesn't assign memsize
+    }
+
+    StackVMExported(uint8_t *shared_memory, size_t mem_size) : StackVM(nullptr), controller(nullptr)
+    {
+      set_memory(shared_memory, mem_size);
+      memsize = mem_size;
     }
 
     uint64_t pub_sp() { return sp; }
@@ -3905,16 +4075,68 @@ extern "C"
     uint8_t *pub_memory() { return memory; }
     size_t pub_memsize() { return memsize; }
     uint64_t pub_sysreg(uint8_t n) { return sys_regs[n]; }
-    void pub_set_sysreg(uint8_t n, uint64_t v) { sys_regs[n] = v; }
+    void pub_set_sysreg(uint8_t n, uint64_t v)
+    {
+      if (n >= sizeof(SVSR_REGISTER_PERMS))
+        return;
+      if (n == SVSR_IPI)
+      {
+        sys_regs[n] = v;
+        on_ipi_write(v);
+      }
+      else
+      {
+        sys_regs[n] = v;
+      }
+      if (n == SVSR_FLAGS)
+      {
+        calc_from_flags();
+      }
+      else if (n == SVSRB_SP + priv_lvl)
+      {
+        sp = v;
+      }
+      else if (n == SVSRB_BP + priv_lvl)
+      {
+        bp = v;
+      }
+    }
     void pub_set_flags(uint64_t flags)
     {
       sys_regs[SVSR_FLAGS] = flags;
       calc_from_flags();
     }
     void pub_set_virt_syscall(VirtSyscall fn) { virt_syscall = fn; }
+    void pub_post_interrupt(uint8_t int_n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
+    {
+      post_interrupt(int_n, a0, a1, a2, a3);
+    }
+    bool pub_tlb_has_tlptr(uint64_t tlptr) const
+    {
+      return tlptr == sys_regs[SVSR_KERNEL_TLPTR] || tlptr == sys_regs[SVSR_USER_TLPTR];
+    }
+    void pub_tlb_insert(uint64_t tlptr, uint64_t vaddr, uint64_t phys, uint8_t mask)
+    {
+      uint64_t page_mask =
+          (virt_mem_mode == VM_DISABLED) ? ~uint64_t(4096 - 1) : pte_hmasks[virt_mem_mode];
+      tlb[std::make_pair(tlptr, vaddr & page_mask)] = std::make_pair(phys & page_mask, mask);
+    }
+    bool pub_tlb_has_entry(uint64_t tlptr, uint64_t vaddr)
+    {
+      uint64_t page_mask =
+          (virt_mem_mode == VM_DISABLED) ? ~uint64_t(4096 - 1) : pte_hmasks[virt_mem_mode];
+      return tlb.find(std::make_pair(tlptr, vaddr & page_mask)) != tlb.end();
+    }
+    size_t pub_tlb_size() const { return tlb.size(); }
+    void pub_tlb_invalidate_range(uint64_t tlptr, uint64_t vaddr_base, uint64_t page_count)
+    {
+      tlb_invalidate_range(tlptr, vaddr_base, page_count);
+    }
 
     void pub_step()
     {
+      if (!running)
+        return;
       const uint64_t prev_ip = ip;
       const uint64_t prev_bp = bp;
       const uint64_t prev_sp = sp;
@@ -3922,6 +4144,7 @@ extern "C"
       try
       {
         execute_once();
+        retire_instruction();
       }
       catch (StackVM_TrapException &exc)
       {
@@ -3933,7 +4156,149 @@ extern "C"
         trap(exc.int_n, prev_ip, prev_bp, prev_sp, prev_flags, exc.arg0);
       }
     }
+
+    void on_ipi_write(uint64_t value) override;
+    void on_tlb_shootdown(const vector<std::tuple<uint64_t, uint64_t, uint64_t>> &descs,
+                          uint8_t flags,
+                          uint64_t done_core,
+                          bool has_done_core,
+                          uint64_t multi_ptr,
+                          uint64_t multi_len) override;
   };
+
+  struct StackVMMultiCoreController
+  {
+    std::unique_ptr<uint8_t[]> owned_memory;
+    size_t memory_size;
+    vector<std::unique_ptr<StackVMExported>> cores;
+
+    StackVMMultiCoreController(size_t core_count, size_t mem_size)
+        : owned_memory(std::make_unique<uint8_t[]>(mem_size)), memory_size(mem_size)
+    {
+      memset(owned_memory.get(), 0, memory_size);
+      cores.reserve(core_count);
+      const uint64_t stack_stride = 4096;
+      for (size_t i = 0; i < core_count; ++i)
+      {
+        auto core = std::make_unique<StackVMExported>(owned_memory.get(), memory_size);
+        core->controller = this;
+        core->pub_set_sysreg(SVSR_CORE_ID, i);
+        uint64_t stack_top = memory_size;
+        if (stack_stride * core_count <= memory_size)
+          stack_top = memory_size - i * stack_stride;
+        core->pub_set_sp(stack_top);
+        core->pub_set_bp(stack_top);
+        core->pub_set_sysreg(SVSR_KERNEL_SP, stack_top);
+        core->pub_set_sysreg(SVSR_KERNEL_BP, stack_top);
+        core->pub_set_sysreg(SVSR_USER_SP, stack_top);
+        core->pub_set_sysreg(SVSR_USER_BP, stack_top);
+        cores.push_back(std::move(core));
+      }
+    }
+
+    StackVMExported *get_core(size_t core_id)
+    {
+      if (core_id >= cores.size())
+        return nullptr;
+      return cores[core_id].get();
+    }
+
+    void send_ipi(StackVMExported *src, uint64_t value)
+    {
+      (void)src;
+      const uint64_t target_core_id = value & 0xFF;
+      const uint8_t irq = (value >> 8) & 0xFF;
+      StackVMExported *target = get_core(target_core_id);
+      if (target)
+        target->pub_post_interrupt(irq, value, 0, 0, 0);
+    }
+
+    void tlb_shootdown(StackVMExported *src,
+                       const vector<std::tuple<uint64_t, uint64_t, uint64_t>> &descs,
+                       uint8_t flags,
+                       uint64_t done_core,
+                       bool has_done_core,
+                       uint64_t multi_ptr,
+                       uint64_t multi_len)
+    {
+      const bool remote_int = (flags & INVTLB_F_REMOTE_INT) != 0;
+      const bool is_async = (flags & INVTLB_F_ASYNC) != 0;
+      for (auto &core_ptr : cores)
+      {
+        StackVMExported *core = core_ptr.get();
+        if (core == src)
+          continue;
+        bool matches = false;
+        for (const auto &desc : descs)
+        {
+          uint64_t tlptr, base, count;
+          std::tie(tlptr, base, count) = desc;
+          if (core->pub_tlb_has_tlptr(tlptr))
+            matches = true;
+          if (!remote_int || !is_async)
+            core->pub_tlb_invalidate_range(tlptr, base, count);
+        }
+        if (remote_int && matches)
+        {
+          uint64_t tlptr = 0, base = 0, count = 0;
+          if (!descs.empty())
+            std::tie(tlptr, base, count) = descs[0];
+          core->pub_post_interrupt(INT_TLB_SHOOTDOWN, tlptr, base, count, 0);
+        }
+      }
+
+      if (is_async && !remote_int)
+      {
+        uint64_t target_core_id = has_done_core ? done_core : src->pub_sysreg(SVSR_CORE_ID);
+        StackVMExported *target = get_core(target_core_id);
+        if (target)
+        {
+          uint64_t a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+          if (multi_len)
+          {
+            a0 = multi_ptr;
+            a1 = multi_len;
+          }
+          else if (!descs.empty())
+          {
+            std::tie(a0, a1, a2) = descs[0];
+          }
+          target->pub_post_interrupt(INT_TLB_SHOOTDOWN_DONE, a0, a1, a2, a3);
+        }
+      }
+    }
+
+    size_t step_round()
+    {
+      size_t retired = 0;
+      for (auto &core : cores)
+      {
+        if (core->pub_running())
+        {
+          core->pub_step();
+          ++retired;
+        }
+      }
+      return retired;
+    }
+  };
+
+  void StackVMExported::on_ipi_write(uint64_t value)
+  {
+    if (controller)
+      controller->send_ipi(this, value);
+  }
+
+  void StackVMExported::on_tlb_shootdown(const vector<std::tuple<uint64_t, uint64_t, uint64_t>> &descs,
+                                         uint8_t flags,
+                                         uint64_t done_core,
+                                         bool has_done_core,
+                                         uint64_t multi_ptr,
+                                         uint64_t multi_len)
+  {
+    if (controller)
+      controller->tlb_shootdown(this, descs, flags, done_core, has_done_core, multi_ptr, multi_len);
+  }
 
   STACK_VM_EXPORT void *make_stack_vm(size_t memory_size)
   {
@@ -3961,6 +4326,54 @@ extern "C"
   {
     static_cast<StackVMExported *>(vm)->pub_set_virt_syscall(fn);
   }
+  STACK_VM_EXPORT void vm_post_interrupt(void *vm, uint8_t int_n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3)
+  {
+    static_cast<StackVMExported *>(vm)->pub_post_interrupt(int_n, a0, a1, a2, a3);
+  }
+  STACK_VM_EXPORT void vm_tlb_insert(void *vm, uint64_t tlptr, uint64_t vaddr, uint64_t phys, uint8_t mask)
+  {
+    static_cast<StackVMExported *>(vm)->pub_tlb_insert(tlptr, vaddr, phys, mask);
+  }
+  STACK_VM_EXPORT uint8_t vm_tlb_has_entry(void *vm, uint64_t tlptr, uint64_t vaddr)
+  {
+    return static_cast<StackVMExported *>(vm)->pub_tlb_has_entry(tlptr, vaddr) ? 1 : 0;
+  }
+  STACK_VM_EXPORT size_t vm_tlb_size(void *vm)
+  {
+    return static_cast<StackVMExported *>(vm)->pub_tlb_size();
+  }
+  STACK_VM_EXPORT void vm_tlb_invalidate_range(void *vm, uint64_t tlptr, uint64_t vaddr_base, uint64_t page_count)
+  {
+    static_cast<StackVMExported *>(vm)->pub_tlb_invalidate_range(tlptr, vaddr_base, page_count);
+  }
   STACK_VM_EXPORT void vm_step(void *vm) { static_cast<StackVMExported *>(vm)->pub_step(); }
   STACK_VM_EXPORT void vm_execute(void *vm) { static_cast<StackVMExported *>(vm)->execute(); }
+  STACK_VM_EXPORT void *make_stack_vm_multicore(size_t core_count, size_t memory_size)
+  {
+    return new StackVMMultiCoreController(core_count, memory_size);
+  }
+  STACK_VM_EXPORT void destroy_stack_vm_multicore(void *machine)
+  {
+    delete static_cast<StackVMMultiCoreController *>(machine);
+  }
+  STACK_VM_EXPORT void *multicore_get_core(void *machine, size_t core_id)
+  {
+    return static_cast<StackVMMultiCoreController *>(machine)->get_core(core_id);
+  }
+  STACK_VM_EXPORT uint8_t *multicore_get_memory(void *machine)
+  {
+    return static_cast<StackVMMultiCoreController *>(machine)->owned_memory.get();
+  }
+  STACK_VM_EXPORT size_t multicore_get_memory_size(void *machine)
+  {
+    return static_cast<StackVMMultiCoreController *>(machine)->memory_size;
+  }
+  STACK_VM_EXPORT size_t multicore_get_core_count(void *machine)
+  {
+    return static_cast<StackVMMultiCoreController *>(machine)->cores.size();
+  }
+  STACK_VM_EXPORT size_t multicore_step_round(void *machine)
+  {
+    return static_cast<StackVMMultiCoreController *>(machine)->step_round();
+  }
 }

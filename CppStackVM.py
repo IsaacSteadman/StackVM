@@ -5,6 +5,7 @@ import struct
 _lib_path = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "cpp", "stack_vm.dylib"
 )
+_lib_path = os.environ.get("STACKVM_CPP_LIB", _lib_path)
 _lib = ctypes.CDLL(_lib_path)
 
 
@@ -54,8 +55,62 @@ _vm_set_flags = _proto("vm_set_flags", None, ctypes.c_void_p, ctypes.c_uint64)
 _vm_set_virt_syscall = _proto(
     "vm_set_virt_syscall", None, ctypes.c_void_p, ctypes.c_void_p
 )
+_vm_post_interrupt = _proto(
+    "vm_post_interrupt",
+    None,
+    ctypes.c_void_p,
+    ctypes.c_uint8,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+)
+_vm_tlb_insert = _proto(
+    "vm_tlb_insert",
+    None,
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_uint8,
+)
+_vm_tlb_has_entry = _proto(
+    "vm_tlb_has_entry",
+    ctypes.c_uint8,
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+)
+_vm_tlb_size = _proto("vm_tlb_size", ctypes.c_size_t, ctypes.c_void_p)
+_vm_tlb_invalidate_range = _proto(
+    "vm_tlb_invalidate_range",
+    None,
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+)
 _vm_step = _proto("vm_step", None, ctypes.c_void_p)
 _vm_execute = _proto("vm_execute", None, ctypes.c_void_p)
+_make_stack_vm_multicore = _proto(
+    "make_stack_vm_multicore", ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t
+)
+_destroy_stack_vm_multicore = _proto("destroy_stack_vm_multicore", None, ctypes.c_void_p)
+_multicore_get_core = _proto(
+    "multicore_get_core", ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t
+)
+_multicore_get_memory = _proto(
+    "multicore_get_memory", ctypes.c_void_p, ctypes.c_void_p
+)
+_multicore_get_memory_size = _proto(
+    "multicore_get_memory_size", ctypes.c_size_t, ctypes.c_void_p
+)
+_multicore_get_core_count = _proto(
+    "multicore_get_core_count", ctypes.c_size_t, ctypes.c_void_p
+)
+_multicore_step_round = _proto(
+    "multicore_step_round", ctypes.c_size_t, ctypes.c_void_p
+)
 
 
 class _SysRegsProxy:
@@ -74,15 +129,16 @@ class _SysRegsProxy:
 
 
 class VirtualMachine:
-    def __init__(self, mem_size: int):
-        self.void_ptr_inst = _make_stack_vm(mem_size)
+    def __init__(self, mem_size: int, _ptr=None, _owner: bool = True):
+        self.void_ptr_inst = _ptr if _ptr is not None else _make_stack_vm(mem_size)
         if not self.void_ptr_inst:
             raise MemoryError("Failed to allocate StackVM (mem_size=%d)" % mem_size)
         self.sys_regs = _SysRegsProxy(self.void_ptr_inst)
         self._virt_syscall_ref = None  # keeps ctypes callback alive
+        self._owner = _owner
 
     def __del__(self):
-        if self.void_ptr_inst:
+        if self.void_ptr_inst and self._owner:
             _destroy_stack_vm(self.void_ptr_inst)
             self.void_ptr_inst = 0
 
@@ -174,10 +230,13 @@ class VirtualMachine:
     # run_in_vm, add_cmd_argv_vm, and the Debugger so that both backends can
     # be driven by the same code.
 
-    # VM_DISABLED == 0; tells Debugger that no virtual memory translation is active.
-    virt_mem_mode = 0
-    # No privilege levels in the C++ backend.
-    priv_lvl = 0
+    @property
+    def priv_lvl(self) -> int:
+        return (self.sys_regs[0] >> 8) & 1
+
+    @property
+    def virt_mem_mode(self) -> int:
+        return (self.sys_regs[0] >> 10) & 0xF
 
     def load_program(self, program, at_addr: int = 0):
         """Write bytecode into VM memory starting at at_addr."""
@@ -206,3 +265,55 @@ class VirtualMachine:
         """Decrement sp by sz bytes then write val; mirrors PyStackVM.push."""
         self.sp = self.sp - sz
         return self.set(sz, self.sp, val)
+
+    def post_interrupt(self, int_n: int, a0: int = 0, a1: int = 0, a2: int = 0, a3: int = 0):
+        _vm_post_interrupt(self.void_ptr_inst, int_n, a0, a1, a2, a3)
+
+    def tlb_insert(self, tlptr: int, vaddr: int, phys: int, mask: int):
+        _vm_tlb_insert(self.void_ptr_inst, tlptr, vaddr, phys, mask)
+
+    def tlb_has_entry(self, tlptr: int, vaddr: int) -> bool:
+        return bool(_vm_tlb_has_entry(self.void_ptr_inst, tlptr, vaddr))
+
+    def tlb_size(self) -> int:
+        return int(_vm_tlb_size(self.void_ptr_inst))
+
+    def tlb_invalidate_range(self, tlptr: int, vaddr_base: int, page_count: int):
+        _vm_tlb_invalidate_range(self.void_ptr_inst, tlptr, vaddr_base, page_count)
+
+
+class MultiCoreMachine:
+    def __init__(self, core_count: int, memory_size: int):
+        self.void_ptr_inst = _make_stack_vm_multicore(core_count, memory_size)
+        if not self.void_ptr_inst:
+            raise MemoryError("Failed to allocate C++ StackVM SMP machine")
+        self.cores = [
+            VirtualMachine(memory_size, _ptr=_multicore_get_core(self.void_ptr_inst, i), _owner=False)
+            for i in range(core_count)
+        ]
+
+    def __del__(self):
+        if self.void_ptr_inst:
+            _destroy_stack_vm_multicore(self.void_ptr_inst)
+            self.void_ptr_inst = 0
+
+    @property
+    def core_count(self) -> int:
+        return int(_multicore_get_core_count(self.void_ptr_inst))
+
+    @property
+    def memory(self):
+        ptr = _multicore_get_memory(self.void_ptr_inst)
+        size = _multicore_get_memory_size(self.void_ptr_inst)
+        return (ctypes.c_uint8 * size).from_address(ptr)
+
+    def load_program(self, program, at_addr: int = 0, core_ids=None):
+        mem = self.memory
+        for i, b in enumerate(program):
+            mem[at_addr + i] = b
+        targets = range(self.core_count) if core_ids is None else core_ids
+        for core_id in targets:
+            self.cores[int(core_id)].ip = at_addr
+
+    def step_round(self) -> int:
+        return int(_multicore_step_round(self.void_ptr_inst))

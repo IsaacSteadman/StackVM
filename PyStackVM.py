@@ -1917,6 +1917,86 @@ class MultiCoreController(object):
             self._handle_issuer.pop(handle, None)
 
 
+class MultiCoreMachine(object):
+    """Deterministic SMP host for a set of StackVM cores.
+
+    D7 deliberately chooses serialized round-robin execution: every core shares
+    one physical memory bytearray, but each ``VirtualMachine`` keeps independent
+    architectural state (SP/BP/IP/sysregs/TLB/APIC).  Because only one core
+    retires an instruction at a time, ordinary memory operations are sequentially
+    consistent in host order and the existing fence bytecodes remain no-ops.
+    """
+
+    def __init__(self, core_count: int, memory_size: int, *, stack_size: int = 4096):
+        if core_count < 1:
+            raise ValueError("core_count must be >= 1")
+        if memory_size < 1:
+            raise ValueError("memory_size must be >= 1")
+        if stack_size < 0:
+            raise ValueError("stack_size must be >= 0")
+        if stack_size and stack_size * core_count > memory_size:
+            raise ValueError("per-core stacks do not fit in memory")
+
+        self.memory = bytearray(memory_size)
+        self.controller = MultiCoreController()
+        self.cores = []
+        for core_id in range(core_count):
+            vm = VirtualMachine(memory_size, 0)
+            vm.memory = self.memory
+            vm.set_core_id(core_id)
+            vm.apic = AdvProgIntCtl()
+            if stack_size:
+                stack_top = memory_size - core_id * stack_size
+            else:
+                stack_top = memory_size
+            vm.sp = vm.bp = stack_top
+            vm.sys_regs[SVSR_KERNEL_SP] = stack_top
+            vm.sys_regs[SVSR_KERNEL_BP] = stack_top
+            vm.sys_regs[SVSR_USER_SP] = stack_top
+            vm.sys_regs[SVSR_USER_BP] = stack_top
+            self.controller.add_core(vm)
+            self.cores.append(vm)
+
+    @property
+    def core_count(self) -> int:
+        return len(self.cores)
+
+    def load_program(self, program, at_addr: int = 0, *, core_ids=None):
+        self.memory[at_addr : at_addr + len(program)] = bytes(program)
+        targets = range(self.core_count) if core_ids is None else core_ids
+        for core_id in targets:
+            self.cores[int(core_id)].ip = at_addr
+
+    def step_core(self, core_id: int) -> bool:
+        return self.cores[int(core_id)].step()
+
+    def step_round(self) -> int:
+        retired = 0
+        for vm in self.cores:
+            if vm.running and vm.step():
+                retired += 1
+        return retired
+
+    def run_round_robin(self, max_rounds=None, max_steps=None) -> int:
+        """Run cores in ascending core-id order until all halt or a limit trips.
+
+        Returns the number of retired guest instructions.
+        """
+        retired = 0
+        rounds = 0
+        while any(vm.running for vm in self.cores):
+            if max_rounds is not None and rounds >= max_rounds:
+                break
+            progressed = self.step_round()
+            retired += progressed
+            rounds += 1
+            if max_steps is not None and retired >= max_steps:
+                break
+            if progressed == 0:
+                break
+        return retired
+
+
 def vm_interrupt(vm_inst):
     """
     :param VirtualMachine vm_inst:
@@ -3684,6 +3764,8 @@ class VirtualMachine(object):
         ) & 0xFFFFFFFFFFFFFFFF
         if self.timer is not None:
             self.timer.tick()
+        if self.apic is not None and self.apic.pending():
+            self.deliver_pending_interrupt(self.apic)
         return True
 
     def get_stack_list(self, most_recent_call_last=False):
