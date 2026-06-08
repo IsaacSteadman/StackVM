@@ -184,6 +184,20 @@ _boot_parser.add_argument(
     help="devicetree / boot-params blob to place in memory",
 )
 _boot_parser.add_argument(
+    "--generate-dtb",
+    action="store_true",
+    dest="generate_dtb",
+    help="auto-generate a devicetree describing the configured machine "
+    "(cores, memory map, devices) and point StartupData.dtb at it",
+)
+_boot_parser.add_argument(
+    "--slim",
+    action="store_true",
+    help="use the DTB-authoritative (slim) StartupData handoff: the memory map, "
+    "cmdline and initramfs are described only by the devicetree (implies "
+    "--generate-dtb when no --dtb is given)",
+)
+_boot_parser.add_argument(
     "--cores",
     metavar="N",
     type=int,
@@ -238,7 +252,9 @@ def _main() -> None:
             f"  vm_size     = {args.vm_size:#010x}\n"
             f"  initramfs   = {len(initramfs)} bytes\n"
             f"  cmdline     = {args.cmdline!r}\n"
-            f"  cores       = {args.cores}"
+            f"  cores       = {args.cores}\n"
+            f"  dtb         = {'supplied' if dtb else ('generated' if (args.generate_dtb or args.slim) else 'none')}"
+            f"{' (slim handoff)' if args.slim else ''}"
         )
         try:
             run_boot_in_vm(
@@ -248,6 +264,8 @@ def _main() -> None:
                 cmdline=args.cmdline,
                 initramfs=initramfs,
                 dtb=dtb,
+                generate_dtb=args.generate_dtb,
+                slim=args.slim,
                 core_count=args.cores,
                 use_debugger=args.debug,
                 syscall_sets=args.syscalls or None,

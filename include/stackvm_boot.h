@@ -40,8 +40,21 @@
  * struct_size, so appends are backward compatible. */
 #define SVSD_VERSION 1u
 
-/* StartupData.flags bits (all currently reserved / zero). */
+/* StartupData.flags bits. */
 #define SVSD_FLAG_NONE 0u
+/*
+ * SVSD_FLAG_DTB - the devicetree blob at `dtb` is the authoritative hardware
+ * description.  When set, the loader has *not* populated the fields that the DTB
+ * now carries: `mem_map`/`mem_map_count` (described by the DTB /memory and
+ * /reserved-memory nodes), `cmdline`/`cmdline_size` (/chosen bootargs),
+ * `initramfs_base`/`initramfs_size` (/chosen linux,initrd-start/-end), and
+ * `core_count` (/cpus); each is left zero.  This "slim" form matches the
+ * arm64/RISC-V handoff (a thin register/struct handoff + a self-describing DTB);
+ * the initramfs *payload* is still resident in memory, only its description
+ * moves into the DTB.  When clear, every field is populated as in the D1 ABI and
+ * the DTB (if any) is supplementary.
+ */
+#define SVSD_FLAG_DTB 1u
 
 /* MemMapEntry.type values. */
 #define SVMEM_RAM 1u       /* usable RAM, free for the kernel allocator */

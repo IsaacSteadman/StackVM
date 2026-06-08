@@ -7,9 +7,9 @@ property conventions) and provides :func:`build_stackvm_fdt`, the reference
 implementation that emits a binding-conformant flattened devicetree using the
 :mod:`StackVM.devicetree` core (D1a.1).
 
-The boot path (:mod:`StackVM.boot`) will call this to describe the configured
-machine and point ``StartupData.dtb`` at the result; that wiring + the optional
-``StartupData`` slimming is tracked separately as D1a.3.
+The boot path (:mod:`StackVM.boot`) calls this (via ``build_machine_dtb`` /
+``plan_boot_image``, D1a.3) to describe the configured machine and point
+``StartupData.dtb`` at the result, with an optional ``StartupData`` slimming form.
 
 Bindings overview (see the HTML doc for the normative text)::
 

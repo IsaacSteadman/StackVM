@@ -3,8 +3,8 @@
 This is a small, self-contained *libfdt-equivalent*: it parses and generates
 flattened devicetree blobs (the binary ``.dtb`` form), with a builder API for
 constructing a tree (add node / set typed properties) and a reader API used by
-tests, the StackVM DT bindings (:mod:`StackVM.dt_bindings`), and — later — the
-boot path (:mod:`StackVM.boot`, tracked as D1a.3).
+tests, the StackVM DT bindings (:mod:`StackVM.dt_bindings`), and the boot path
+(:mod:`StackVM.boot`, D1a.3).
 
 The on-disk layout follows the Devicetree Specification (v0.4):
 

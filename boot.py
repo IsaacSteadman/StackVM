@@ -44,6 +44,10 @@ SVSD_MAGIC = 0x31544F4F424D5653
 SVSD_VERSION = 1
 
 SVSD_FLAG_NONE = 0
+# The DTB is the authoritative hardware description; the mem_map / cmdline /
+# initramfs / core_count fields are left zero and read from the devicetree
+# instead (the "slim", arm64/RISC-V-style handoff).  See stackvm_boot.h.
+SVSD_FLAG_DTB = 1
 
 # MemMapEntry.type values.
 SVMEM_RAM = 1
@@ -114,6 +118,11 @@ class StartupData:
     @property
     def is_valid(self) -> bool:
         return self.magic == SVSD_MAGIC and self.struct_size >= STARTUP_DATA_SIZE
+
+    @property
+    def dtb_only(self) -> bool:
+        """True when the slim/DTB handoff form was used (SVSD_FLAG_DTB set)."""
+        return bool(self.flags & SVSD_FLAG_DTB)
 
 
 @dataclass
@@ -273,6 +282,7 @@ def populate_startup_data(
     image: BootImage,
     *,
     initramfs: bytes = b"",
+    slim: bool = False,
 ) -> int:
     """Write StartupData and its sub-tables into *memory* per *image*.
 
@@ -280,11 +290,22 @@ def populate_startup_data(
     caller; this writes the bootdata region (StartupData struct, memory-map
     array, command line, devicetree blob) and the initramfs (when provided here
     for convenience).  Returns the StartupData address.
+
+    When *slim* is set, the handoff uses the DTB-authoritative form
+    (``SVSD_FLAG_DTB``): the ``mem_map``/``cmdline``/``initramfs``/``core_count``
+    fields are left zero (the kernel reads them from the devicetree), so a DTB
+    must be present in *image*.  The initramfs *payload* is still written into
+    memory; only its description moves into the DTB.
     """
+    if slim and not image.dtb_bytes:
+        raise ValueError("slim StartupData (SVSD_FLAG_DTB) requires a devicetree blob")
+
     if initramfs:
         memory[image.initramfs_base : image.initramfs_base + len(initramfs)] = initramfs
 
-    # bootdata sub-table addresses, laid out immediately after the struct.
+    # bootdata sub-table addresses, laid out immediately after the struct.  The
+    # DTB always lands at a deterministic offset whether or not the (now
+    # redundant) mem_map/cmdline tables are also materialised.
     mem_map_addr = image.bootdata_base + STARTUP_DATA_SIZE
     cmdline_addr = mem_map_addr + len(image.mem_map) * MEM_MAP_ENTRY_SIZE
     dtb_addr = cmdline_addr + len(image.cmdline_bytes)
@@ -292,42 +313,45 @@ def populate_startup_data(
     if dtb_end > image.bootdata_end:
         raise ValueError("bootdata sub-tables overflow the bootdata region")
 
-    # Memory map.
-    for i, entry in enumerate(image.mem_map):
-        _struct.pack_into(
-            _MM_FORMAT,
-            memory,
-            mem_map_addr + i * MEM_MAP_ENTRY_SIZE,
-            entry.base & _U64_MASK,
-            entry.size & _U64_MASK,
-            entry.type & 0xFFFFFFFF,
-            0,
-        )
+    if not slim:
+        # Memory map.
+        for i, entry in enumerate(image.mem_map):
+            _struct.pack_into(
+                _MM_FORMAT,
+                memory,
+                mem_map_addr + i * MEM_MAP_ENTRY_SIZE,
+                entry.base & _U64_MASK,
+                entry.size & _U64_MASK,
+                entry.type & 0xFFFFFFFF,
+                0,
+            )
 
-    # Command line (always present, NUL-terminated).
-    memory[cmdline_addr : cmdline_addr + len(image.cmdline_bytes)] = image.cmdline_bytes
+        # Command line (always present, NUL-terminated).
+        memory[
+            cmdline_addr : cmdline_addr + len(image.cmdline_bytes)
+        ] = image.cmdline_bytes
 
-    # Devicetree / boot-params blob (optional).
+    # Devicetree / boot-params blob (optional in the full form, required in slim).
     if image.dtb_bytes:
         memory[dtb_addr : dtb_addr + len(image.dtb_bytes)] = image.dtb_bytes
 
-    # StartupData struct itself.
+    # StartupData struct itself.  In slim mode the DTB-described fields are zero.
     _struct.pack_into(
         _SD_FORMAT,
         memory,
         image.startup_data_addr,
         SVSD_MAGIC,
         SVSD_VERSION,
-        SVSD_FLAG_NONE,
+        SVSD_FLAG_DTB if slim else SVSD_FLAG_NONE,
         STARTUP_DATA_SIZE,
-        image.core_count,
+        0 if slim else image.core_count,
         image.boot_core_id,
-        mem_map_addr,
-        len(image.mem_map),
-        image.initramfs_base,
-        image.initramfs_size,
-        cmdline_addr,
-        len(image.cmdline_bytes),
+        0 if slim else mem_map_addr,
+        0 if slim else len(image.mem_map),
+        0 if slim else image.initramfs_base,
+        0 if slim else image.initramfs_size,
+        0 if slim else cmdline_addr,
+        0 if slim else len(image.cmdline_bytes),
         dtb_addr if image.dtb_bytes else 0,
         len(image.dtb_bytes),
     )
@@ -369,6 +393,89 @@ def read_startup_data(
 
 
 # ---------------------------------------------------------------------------
+# Emulator-side devicetree generation (D1a.3)
+# ---------------------------------------------------------------------------
+
+
+def build_machine_dtb(image: BootImage, *, devices=None, stdout_path=None, model=None) -> bytes:
+    """Build a binding-conformant DTB describing the machine in *image*.
+
+    The /memory and /reserved-memory nodes are derived from *image*'s D1 memory
+    map, /chosen carries the command line + initramfs extent, and /cpus carries
+    one node per core.  Defers the device set + property conventions to
+    :mod:`StackVM.dt_bindings` (the D1a.2 reference builder).
+    """
+    from .dt_bindings import build_stackvm_fdt, dt_regions_from_mem_map
+
+    memory_regions, reserved_regions = dt_regions_from_mem_map(image.mem_map)
+    cmdline = image.cmdline_bytes.split(b"\0", 1)[0].decode("utf-8", "replace")
+    kwargs = dict(
+        memory_regions=memory_regions,
+        reserved_regions=reserved_regions,
+        core_count=image.core_count,
+        boot_core_id=image.boot_core_id,
+        cmdline=cmdline,
+        initramfs_base=image.initramfs_base,
+        initramfs_size=image.initramfs_size,
+    )
+    if devices is not None:
+        kwargs["devices"] = devices
+    if stdout_path is not None:
+        kwargs["stdout_path"] = stdout_path
+    if model is not None:
+        kwargs["model"] = model
+    return build_stackvm_fdt(**kwargs).to_dtb()
+
+
+def plan_boot_image(
+    vm_size: int,
+    kernel_len: int,
+    *,
+    kernel_base: int = BOOT_PAGE_SIZE,
+    cmdline: Union[str, bytes] = "",
+    initramfs: bytes = b"",
+    dtb: bytes = b"",
+    generate_dtb: bool = False,
+    core_count: int = 1,
+    boot_core_id: int = 0,
+    devices=None,
+) -> BootImage:
+    """Plan a boot image, optionally auto-generating a machine-describing DTB.
+
+    With ``generate_dtb`` set and no explicit *dtb*, this builds a DTB from the
+    configured machine (cores, the D1 memory map, the enabled D4/D5 devices) and
+    embeds it.  Because the DTB lives inside the page-aligned bootdata region, its
+    presence shifts the layout (and therefore the /reserved-memory bootdata
+    extent the DTB itself reports); the layout is iterated to a fixed point so the
+    embedded DTB describes exactly the image it ships in.
+    """
+    base_kwargs = dict(
+        kernel_base=kernel_base,
+        cmdline=cmdline,
+        initramfs=initramfs,
+        core_count=core_count,
+        boot_core_id=boot_core_id,
+    )
+    if dtb or not generate_dtb:
+        # Explicit blob (or none requested): a single deterministic layout.
+        return build_boot_image(vm_size, kernel_len, dtb=dtb, **base_kwargs)
+
+    gen_dtb = b""
+    image = build_boot_image(vm_size, kernel_len, dtb=gen_dtb, **base_kwargs)
+    # Two passes suffice (the DTB byte size is structural and stable; only the
+    # reported bootdata extent shifts once), but cap the loop defensively.
+    for _ in range(8):
+        new_dtb = build_machine_dtb(image, devices=devices)
+        if new_dtb == gen_dtb:
+            break
+        gen_dtb = new_dtb
+        image = build_boot_image(vm_size, kernel_len, dtb=gen_dtb, **base_kwargs)
+    else:  # pragma: no cover - layout failed to converge
+        raise RuntimeError("DTB layout did not converge")
+    return image
+
+
+# ---------------------------------------------------------------------------
 # Kernel launch path
 # ---------------------------------------------------------------------------
 
@@ -381,6 +488,8 @@ def boot_kernel(
     cmdline: Union[str, bytes] = "",
     initramfs: bytes = b"",
     dtb: bytes = b"",
+    generate_dtb: bool = False,
+    slim: bool = False,
     core_count: int = 1,
     boot_core_id: int = 0,
     backend: str = "python",
@@ -391,6 +500,12 @@ def boot_kernel(
     kernel mode (priv 0), MMU off, ``SVSR_SDP`` pointing at the StartupData and a
     kernel stack at the top of RAM.  The caller runs it (``vm.execute()`` or via
     the debugger).
+
+    With *generate_dtb* (and no explicit *dtb*), a binding-conformant DTB
+    describing the configured machine is built and embedded, with
+    ``StartupData.dtb`` pointing at it.  With *slim*, the DTB-authoritative
+    handoff is used (``SVSD_FLAG_DTB`` — see :func:`populate_startup_data`); slim
+    implies DTB generation when no blob is supplied.
     """
     if backend not in ("python", "cpp"):
         raise ValueError("backend must be 'python' or 'cpp'")
@@ -408,14 +523,19 @@ def boot_kernel(
     else:
         from .PyStackVM import VirtualMachine
 
+    # slim needs a devicetree; generate one if the caller did not supply a blob.
+    if slim and not dtb:
+        generate_dtb = True
+
     kernel_image = bytes(kernel_image)
-    image = build_boot_image(
+    image = plan_boot_image(
         vm_size,
         len(kernel_image),
         kernel_base=kernel_base,
         cmdline=cmdline,
         initramfs=initramfs,
         dtb=dtb,
+        generate_dtb=generate_dtb,
         core_count=core_count,
         boot_core_id=boot_core_id,
     )
@@ -427,7 +547,7 @@ def boot_kernel(
 
     # MMU off => physical == virtual; write payloads straight into memory.
     vm.memory[kernel_base : kernel_base + len(kernel_image)] = kernel_image
-    populate_startup_data(vm.memory, image, initramfs=initramfs)
+    populate_startup_data(vm.memory, image, initramfs=initramfs, slim=slim)
 
     # Enter the kernel: kernel privilege, MMU off, interrupts disabled, SDP set,
     # entry at the start of the image, kernel stack at the top of RAM.
@@ -457,6 +577,8 @@ def run_boot_in_vm(
     cmdline: Union[str, bytes] = "",
     initramfs: bytes = b"",
     dtb: bytes = b"",
+    generate_dtb: bool = False,
+    slim: bool = False,
     core_count: int = 1,
     use_debugger: bool = False,
     syscall_sets: Optional[List[str]] = None,
@@ -472,6 +594,8 @@ def run_boot_in_vm(
         cmdline=cmdline,
         initramfs=initramfs,
         dtb=dtb,
+        generate_dtb=generate_dtb,
+        slim=slim,
         core_count=core_count,
     )
 
