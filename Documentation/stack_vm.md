@@ -286,3 +286,32 @@ Hypercall numbers are documented in `StackVM/include/stackvm_boot.h` and are:
 Errors are returned as unsigned 64-bit two's-complement negative errno values:
 `SVMPV_EIO` (-5), `SVMPV_ENODEV` (-19), `SVMPV_EINVAL` (-22),
 `SVMPV_ENOSPC` (-28), and `SVMPV_ENOSYS` (-38).
+
+MMIO device framework (Phase-2)
+-------------------------------
+
+The Python reference emulator has a physical-address MMIO bus layered over the
+flat backing memory. After ordinary address translation, an access that falls
+inside a registered MMIO window is dispatched to the device handler instead of
+the bytearray RAM. The guest-facing constants live in
+`StackVM/include/stackvm_mmio.h`.
+
+Default device windows are 4 KiB each:
+
+| Base | Device |
+| --- | --- |
+| `0xFFFF0000` | UART0 serial console |
+| `0xFFFF1000` | MMIO interrupt controller |
+| `0xFFFF2000` | RTC |
+| `0xFFFF3000` | virtio-blk0 |
+| `0xFFFF4000` | virtio-net0 |
+
+The interrupt controller exposes pending, enable, claim, EOI, per-IRQ route,
+and per-IRQ priority registers. Enabled pending device IRQs are routed into the
+existing asynchronous interrupt controller as architectural vectors (by default
+`INT_HW_IO`), so delivery still obeys the FLAGS enable bit and priority masking.
+UART RX, virtio-blk completion, and virtio-net TX/RX completion all raise MMIO
+IRQ lines. The UART provides byte TX/RX plus RX-ready IRQs; the RTC provides
+nanoseconds/seconds reads; virtio-blk uses a host-backed persistent disk image;
+virtio-net uses a host packet backend suitable for deterministic user-net tests
+and future tap integration.

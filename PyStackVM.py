@@ -2109,6 +2109,9 @@ class SplitMemView(object):
         self.mvb = data[len(mva) :]
 
 
+_MMIO_MISS = object()
+
+
 class VirtualMachine(object):
     BASE_SIZE = 4096
     BC_Dispatch = [
@@ -2288,6 +2291,9 @@ class VirtualMachine(object):
         # the virtualized syscall path: guest kernels reach it with
         # CALL_E/IS_INT vector INT_PARAVIRT while running at kernel privilege.
         self.paravirt_hypercall = None
+        # Optional physical-address MMIO bus.  Integer load/store helpers ask
+        # this bus before falling back to the flat bytearray backing memory.
+        self.mmio_bus = None
         # Optional ProgrammableIntervalTimer driving INT_TIMER / the scheduler
         # tick.  Advanced once per retired instruction by the interrupt-aware
         # execution loops (and step); None means no timer is attached.
@@ -2325,6 +2331,60 @@ class VirtualMachine(object):
         # Outstanding ASYNC shootdowns issued by this core: handle -> record.
         self._tlb_outstanding = {}
         self._tlb_next_handle = 1
+
+    def attach_mmio_bus(self, bus):
+        self.mmio_bus = bus
+        attach = getattr(bus, "attach_vm", None)
+        if attach is not None:
+            attach(self)
+
+    def _mmio_service_interrupts(self):
+        bus = self.mmio_bus
+        if bus is not None:
+            service = getattr(bus, "service_interrupts", None)
+            if service is not None:
+                service()
+
+    def _mmio_phys_addr_as_priv(
+        self, priv_lvl: int, sz: int, addr: int, permissions: int
+    ):
+        bus = self.mmio_bus
+        if bus is None:
+            return None
+        vmd = self.virt_mem_mode
+        if vmd:
+            self._tlb_check_switch()
+            page_mask = [0, 0xFFFFFFFFFFFFF000, 0xFFFFFFFFFFFFE000, 0xFFFFF000][vmd]
+            if sz > 1 and (addr & page_mask) != ((addr + sz - 1) & page_mask):
+                return None
+            phys = self._translate(addr, priv_lvl, permissions, page_mask, vmd, True)
+            if phys is None:
+                return None
+        else:
+            phys = addr
+        return phys if bus.handles(phys, sz) else None
+
+    def _try_mmio_read_as_priv(self, priv_lvl: int, sz: int, addr: int):
+        phys = self._mmio_phys_addr_as_priv(priv_lvl, sz, addr, MRQ_READ)
+        if phys is None:
+            return _MMIO_MISS
+        return self.mmio_bus.read(phys, sz)
+
+    def _try_mmio_write_as_priv(self, priv_lvl: int, sz: int, addr: int, v: int):
+        phys = self._mmio_phys_addr_as_priv(priv_lvl, sz, addr, MRQ_WRITE)
+        if phys is None:
+            return _MMIO_MISS
+        self.mmio_bus.write(phys, sz, v)
+        return True
+
+    def _try_mmio_write_bytes_as_priv(
+        self, priv_lvl: int, addr: int, data: Union[memoryview, bytes, bytearray]
+    ):
+        phys = self._mmio_phys_addr_as_priv(priv_lvl, len(data), addr, MRQ_WRITE)
+        if phys is None:
+            return _MMIO_MISS
+        self.mmio_bus.write_bytes(phys, data)
+        return True
 
     def set_core_id(self, core_id: int):
         self.sys_regs[SVSR_CORE_ID] = int(core_id)
@@ -3150,6 +3210,9 @@ class VirtualMachine(object):
         return mem[addr : addr + sz]
 
     def get_as_priv(self, priv_lvl: int, sz: int, addr: int) -> Optional[int]:
+        mmio = self._try_mmio_read_as_priv(priv_lvl, sz, addr)
+        if mmio is not _MMIO_MISS:
+            return mmio
         mem = self.get_mv_as_priv(priv_lvl, sz, addr, MRQ_READ)
         if isinstance(mem, memoryview):
             return int.from_bytes(mem, "little", signed=False)
@@ -3159,6 +3222,9 @@ class VirtualMachine(object):
     def get(self, sz: int, addr: int) -> Optional[int]:
         assert isinstance(addr, int)
         assert isinstance(sz, int)
+        mmio = self._try_mmio_read_as_priv(self.priv_lvl, sz, addr)
+        if mmio is not _MMIO_MISS:
+            return mmio
         mem = self.get_mv_as_priv(self.priv_lvl, sz, addr, MRQ_READ)
         if isinstance(mem, memoryview):
             return int.from_bytes(mem, "little", signed=False)
@@ -3177,6 +3243,9 @@ class VirtualMachine(object):
             return mem.unpack_float()
 
     def set(self, sz: int, addr: int, v: int) -> bool:
+        mmio = self._try_mmio_write_as_priv(self.priv_lvl, sz, addr, v)
+        if mmio is not _MMIO_MISS:
+            return mmio
         mem = self.get_mv_as_priv(self.priv_lvl, sz, addr, MRQ_WRITE)
         if isinstance(mem, memoryview):
             mem[:] = v.to_bytes(sz, "little", signed=v < 0)
@@ -3203,6 +3272,9 @@ class VirtualMachine(object):
         return False
 
     def set_bytes(self, addr: int, data: Union[memoryview, bytes, bytearray]) -> bool:
+        mmio = self._try_mmio_write_bytes_as_priv(self.priv_lvl, addr, data)
+        if mmio is not _MMIO_MISS:
+            return mmio
         mem = self.get_mv_as_priv(self.priv_lvl, len(data), addr, MRQ_WRITE)
         if isinstance(mem, memoryview):
             mem[:] = data
@@ -3383,6 +3455,7 @@ class VirtualMachine(object):
         BC_Dispatch = self.BC_Dispatch
         get_instr_dat = self.get_instr_dat
         self.apic = apic
+        self._mmio_service_interrupts()
         if timer is not None:
             self.timer = timer
         timer = self.timer
@@ -3568,6 +3641,7 @@ class VirtualMachine(object):
         BC_Dispatch = self.BC_Dispatch
         get_instr_dat = self.get_instr_dat
         self.apic = apic
+        self._mmio_service_interrupts()
         if timer is not None:
             self.timer = timer
         timer = self.timer
