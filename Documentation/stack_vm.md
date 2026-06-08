@@ -197,3 +197,30 @@ StackVm System Registers (SVSR)
 - Register 0x07: (SVSR_USER_BP) user base pointer
 - Register 0x08: (SVSR_KERNEL_TLPTR) top level kernel page table pointer
 - Register 0x09: (SVSR_USER_TLPTR) top level user page table pointer
+
+Asynchronous interrupt delivery (local interrupt controller)
+
+Hardware / asynchronous sources (the timer, IPIs, TLB-shootdown completions, and
+device IRQs) post into a small per-core interrupt controller. The processor
+checks it at instruction boundaries and delivers at most one interrupt per
+boundary, subject to the following gating against the receiving core's
+`SVSR_FLAGS`:
+
+- Enable bit: a maskable interrupt is delivered only when FLAGS bit 14 (Enable
+  Interrupts) is set. When it is clear, the interrupt is held pending (it is
+  **not** lost) until interrupts are re-enabled.
+- Priority mask: FLAGS bits 0-7 hold the current priority level, which doubles
+  as the interrupt-mask threshold. **Lower numbers are more urgent.** A pending
+  maskable interrupt is delivered only when its priority is numerically *less
+  than* the current FLAGS priority, so an interrupt cannot preempt a handler
+  running at the same or a more urgent level. The priority of a pending interrupt
+  is the priority field of its ISR-table FLAGS entry (`SVSR_ISR + 16*n`) unless
+  the source pins one explicitly. Because servicing an interrupt loads that ISR
+  FLAGS value (raising the running priority), any still-pending, less-urgent
+  interrupts naturally stay queued until `IRET` restores the lower level.
+- NMI: `INT_NMI` (0x02) is **non-maskable** -- it is delivered regardless of the
+  enable bit and the priority mask.
+
+Multiple pending sources are queued (not a single-slot mailbox) and drained
+most-urgent-first, FIFO among equal priorities, so a burst of interrupts is not
+dropped.

@@ -271,6 +271,17 @@ SVSR_INT_ARG3 = 0x11
 # on context switch.  See Documentation/ThreadLocalStorage.html.
 SVSR_TLS_BASE = 0x12
 
+# ---- SVSR_FLAGS bit layout (see Documentation/stack_vm.md) -----------------
+# bits 0-7 : priority level.  Doubles as the interrupt-mask threshold: lower
+#            number == more urgent, so a pending maskable interrupt is delivered
+#            only when its priority is numerically *less* than this field.
+# bit 8    : privilege level (0 = kernel, 1 = user)
+# bit 9    : vaddr_msb_eq_priv
+# bits 10-13: virtual memory mode
+# bit 14   : Enable Interrupts (1 = maskable interrupts may be delivered, 0 = masked)
+FLAGS_PRIORITY_MASK = 0xFF
+FLAGS_INT_ENABLE = 1 << 14
+
 StackVM_SVSR_Codes = {
     # v3 two-privilege-level layout
     "FLAGS": SVSR_FLAGS,
@@ -1605,25 +1616,118 @@ class InterruptApi(object):
 
 
 class AdvProgIntCtl(object):
-    __slots__ = ["int_ready", "which_int", "arg0", "arg1", "arg2", "arg3"]
+    """Per-core asynchronous interrupt controller (a small local APIC).
+
+    Hardware / asynchronous sources (timer, IPI, TLB-shootdown, device IRQs)
+    post interrupts here with trigger(); the CPU drains the controller between
+    instructions (execute_with_interrupts / debug_with_interrupts).  Delivery is
+    *gated* by the receiving core's FLAGS register, which the VM evaluates via
+    take_deliverable():
+
+      * A maskable interrupt is delivered only when interrupts are enabled
+        (FLAGS bit 14) *and* the interrupt is strictly more urgent than the
+        current FLAGS priority (lower priority number == more urgent).
+      * INT_NMI (0x02) is **non-maskable**: it is delivered regardless of the
+        enable bit and the priority mask.
+
+    Unlike the original single-slot mailbox, pending interrupts are held in a
+    small queue, so a burst of sources is not silently lost; the queue is
+    drained most-urgent-first (FIFO among equal priorities).  Each entry is
+      [int_n, arg0, arg1, arg2, arg3, priority]
+    where ``priority`` is either an explicit value supplied by the source or
+    ``None`` (resolve from the handler's ISR-table FLAGS entry at delivery time).
+
+    The legacy single-slot attributes (int_ready / which_int / arg0..arg3)
+    mirror the head of the queue for backward compatibility.
+    """
+
+    __slots__ = [
+        "int_ready",
+        "which_int",
+        "arg0",
+        "arg1",
+        "arg2",
+        "arg3",
+        "_queue",
+        "_nmi",
+    ]
 
     def __init__(self):
-        self.int_ready = False
-        self.which_int = 0
-        self.arg0 = 0
-        self.arg1 = 0
-        self.arg2 = 0
-        self.arg3 = 0
+        self._queue = []  # list of [int_n, a0, a1, a2, a3, priority|None]
+        self._nmi = None  # at most one pending NMI (edge-collapsed), or None
+        self._refresh_head()
+
+    def _refresh_head(self):
+        """Point the legacy single-slot view at the next pending interrupt."""
+        head = self._nmi if self._nmi is not None else (
+            self._queue[0] if self._queue else None
+        )
+        if head is None:
+            self.int_ready = False
+            self.which_int = 0
+            self.arg0 = self.arg1 = self.arg2 = self.arg3 = 0
+        else:
+            self.int_ready = True
+            self.which_int = head[0]
+            self.arg0, self.arg1, self.arg2, self.arg3 = head[1], head[2], head[3], head[4]
 
     def trigger(
-        self, which_int: int, arg0: int = 0, arg1: int = 0, arg2: int = 0, arg3: int = 0
+        self,
+        which_int: int,
+        arg0: int = 0,
+        arg1: int = 0,
+        arg2: int = 0,
+        arg3: int = 0,
+        priority=None,
     ):
-        self.int_ready = True
-        self.which_int = which_int
-        self.arg0 = arg0
-        self.arg1 = arg1
-        self.arg2 = arg2
-        self.arg3 = arg3
+        """Post an interrupt to this core.
+
+        ``priority`` (0-255, lower == more urgent) lets a source pin a delivery
+        priority; when ``None`` the VM derives it from the handler's ISR-table
+        FLAGS entry.  INT_NMI collapses to a single pending edge (the latest
+        wins); all other sources are queued.
+        """
+        entry = [which_int, arg0, arg1, arg2, arg3, priority]
+        if which_int == INT_NMI:
+            self._nmi = entry
+        else:
+            self._queue.append(entry)
+        self._refresh_head()
+
+    def pending(self) -> bool:
+        """True if any interrupt (NMI or queued) is waiting -- a cheap gate the
+        execute loop checks before doing the masking evaluation."""
+        return self._nmi is not None or bool(self._queue)
+
+    def take_deliverable(self, enabled: bool, cur_priority: int, priority_of):
+        """Remove and return the interrupt that should be delivered now, or None.
+
+        ``enabled``/``cur_priority`` come from the receiving core's FLAGS; an NMI
+        is returned regardless of either.  Among queued maskable interrupts, the
+        most urgent one whose priority is strictly more urgent (numerically less)
+        than ``cur_priority`` is chosen, FIFO breaking ties.  ``priority_of`` maps
+        an interrupt number to its ISR-configured priority for entries that did
+        not pin one explicitly.
+        """
+        if self._nmi is not None:
+            entry = self._nmi
+            self._nmi = None
+            self._refresh_head()
+            return entry
+        if not enabled:
+            return None
+        best_idx = None
+        best_pri = None
+        for i, e in enumerate(self._queue):
+            p = e[5] if e[5] is not None else priority_of(e[0])
+            if p < cur_priority and (best_pri is None or p < best_pri):
+                best_pri = p
+                best_idx = i
+        if best_idx is None:
+            return None
+        entry = self._queue.pop(best_idx)
+        self._refresh_head()
+        return entry
 
 
 class MultiCoreController(object):
@@ -3161,11 +3265,41 @@ class VirtualMachine(object):
                     self.trap(INT_INVAL_OPCODE, code, self.ip)
                 else:
                     raise
-            if apic.int_ready:
-                apic.int_ready = False
-                self.switch_to_interrupt_direct(
-                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
-                )
+            if apic.pending():
+                self.deliver_pending_interrupt(apic)
+
+    def _isr_priority(self, int_n: int) -> int:
+        """Priority an interrupt would run at, taken from its ISR-table FLAGS
+        entry's priority field.  Used to mask deliveries when a source did not
+        pin an explicit priority.  An uninitialised/unreadable table yields 0
+        (most urgent) so delivery still proceeds and surfaces the missing-handler
+        error in switch_to_interrupt rather than silently stalling."""
+        isr_base = self.sys_regs[SVSR_ISR]
+        if isr_base == 0:
+            return 0
+        isr_flags = self.get_as_priv(0, 8, isr_base + int_n * 16)
+        if isr_flags is None:
+            return 0
+        return isr_flags & FLAGS_PRIORITY_MASK
+
+    def deliver_pending_interrupt(self, apic: AdvProgIntCtl):
+        """Drain at most one interrupt from *apic*, honouring the FLAGS
+        interrupt-enable bit (bit 14) and the priority mask (NMI bypasses both).
+
+        Returns the delivered interrupt number, or None if everything pending is
+        currently masked.  Delivery raises the new handler's priority via its ISR
+        FLAGS, so any still-pending, less-urgent interrupts naturally stay queued
+        until IRET lowers the priority again.
+        """
+        flags = self.sys_regs[SVSR_FLAGS]
+        enabled = bool(flags & FLAGS_INT_ENABLE)
+        cur_priority = flags & FLAGS_PRIORITY_MASK
+        entry = apic.take_deliverable(enabled, cur_priority, self._isr_priority)
+        if entry is None:
+            return None
+        int_n, a0, a1, a2, a3, _pri = entry
+        self.switch_to_interrupt_direct(int_n, a0, a1, a2, a3)
+        return int_n
 
     def switch_to_interrupt(self, int_n: int, error_code: int = 0):
         """
@@ -3309,11 +3443,8 @@ class VirtualMachine(object):
                     self.trap(INT_INVAL_OPCODE, code, self.ip)
                 else:
                     raise
-            if apic.int_ready:
-                apic.int_ready = False
-                self.switch_to_interrupt_direct(
-                    apic.which_int, apic.arg0, apic.arg1, apic.arg2, apic.arg3
-                )
+            if apic.pending():
+                self.deliver_pending_interrupt(apic)
         return False
 
     def step(self):
