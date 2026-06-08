@@ -138,6 +138,75 @@ _dis_parser.add_argument(
 )
 
 # ---------------------------------------------------------------------------
+# 'boot' subcommand
+# ---------------------------------------------------------------------------
+_boot_parser = _subparsers.add_parser(
+    "boot",
+    help="boot a freestanding kernel image (vmlinux) via the StartupData ABI",
+)
+_boot_parser.add_argument(
+    "input",
+    metavar="input",
+    help="flat kernel binary to load and enter in kernel mode",
+)
+_boot_parser.add_argument(
+    "--vm-size",
+    metavar="N",
+    type=int,
+    default=1 << 20,
+    dest="vm_size",
+    help="total StackVM physical memory in bytes (default: 1 MiB)",
+)
+_boot_parser.add_argument(
+    "--kernel-base",
+    metavar="ADDR",
+    type=lambda s: int(s, 0),
+    default=0x1000,
+    dest="kernel_base",
+    help="page-aligned physical load/entry address (default: 0x1000)",
+)
+_boot_parser.add_argument(
+    "--cmdline",
+    metavar="STR",
+    default="",
+    help="kernel command line string",
+)
+_boot_parser.add_argument(
+    "--initramfs",
+    metavar="FILE",
+    default=None,
+    help="initramfs image to place in memory and describe in StartupData",
+)
+_boot_parser.add_argument(
+    "--dtb",
+    metavar="FILE",
+    default=None,
+    help="devicetree / boot-params blob to place in memory",
+)
+_boot_parser.add_argument(
+    "--cores",
+    metavar="N",
+    type=int,
+    default=1,
+    dest="cores",
+    help="online core count reported in StartupData (default: 1)",
+)
+_boot_parser.add_argument(
+    "--debug",
+    action="store_true",
+    help="launch the interactive debugger instead of running to completion",
+)
+_boot_parser.add_argument(
+    "--syscalls",
+    nargs="*",
+    metavar="SET",
+    default=[],
+    dest="syscalls",
+    help="syscall sets to enable: os, pygame, all, none (default: none)",
+)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -145,7 +214,49 @@ _dis_parser.add_argument(
 def _main() -> None:
     args = _parser.parse_args()
 
-    if args.subcommand == "run":
+    if args.subcommand == "boot":
+        try:
+            with open(args.input, "rb") as fl:
+                kernel_image = fl.read()
+            initramfs = b""
+            if args.initramfs:
+                with open(args.initramfs, "rb") as fl:
+                    initramfs = fl.read()
+            dtb = b""
+            if args.dtb:
+                with open(args.dtb, "rb") as fl:
+                    dtb = fl.read()
+        except OSError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+        from .boot import run_boot_in_vm
+
+        print(f"Booting kernel: {args.input}")
+        print(
+            f"  kernel_base = {args.kernel_base:#010x}\n"
+            f"  vm_size     = {args.vm_size:#010x}\n"
+            f"  initramfs   = {len(initramfs)} bytes\n"
+            f"  cmdline     = {args.cmdline!r}\n"
+            f"  cores       = {args.cores}"
+        )
+        try:
+            run_boot_in_vm(
+                kernel_image,
+                vm_size=args.vm_size,
+                kernel_base=args.kernel_base,
+                cmdline=args.cmdline,
+                initramfs=initramfs,
+                dtb=dtb,
+                core_count=args.cores,
+                use_debugger=args.debug,
+                syscall_sets=args.syscalls or None,
+            )
+        except (ValueError, NotImplementedError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+    elif args.subcommand == "run":
         program_args: list[str] = args.program_args
         if program_args and program_args[0] == "--":
             program_args = program_args[1:]
