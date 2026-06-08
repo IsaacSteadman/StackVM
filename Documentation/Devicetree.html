@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM | Devicetree Bindings</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>StackVM Devicetree (FDT) Bindings</h1>
+    <p>
+      This page is the canonical description of the StackVM platform
+      <strong>devicetree bindings</strong>: the node layout, <code>compatible</code>
+      strings, and property conventions a StackVM machine uses to describe itself
+      to a kernel. It is the hardware-description half of the boot ABI; the boot
+      handoff itself (the <code>struct StartupData</code> pointed at by
+      <a href="SYSREG.html">SVSR_SDP</a>) is described by
+      <code>StackVM/include/stackvm_boot.h</code>, and the MMIO device registers
+      are in <code>StackVM/include/stackvm_mmio.h</code>. The flattened-devicetree
+      (DTB) binary format itself follows the
+      <a href="https://www.devicetree.org/specifications/">Devicetree Specification
+      v0.4</a>; the read/write core is <code>StackVM/devicetree.py</code> and the
+      reference binding builder is <code>StackVM/dt_bindings.py</code>
+      (<code>build_stackvm_fdt</code>).
+    </p>
+
+    <h2>1. Why a devicetree</h2>
+    <p>
+      D1 hands a kernel a fixed <code>struct StartupData</code> with the core
+      count, a physical memory map, the initramfs, the kernel command line, and a
+      <code>dtb</code> pointer. The devicetree evolves the <em>hardware
+      description</em> axis toward the arm64/RISC-V model: a thin register/struct
+      handoff plus a self-describing flattened devicetree blob (FDT/DTB) that
+      <code>StartupData.dtb</code> points at. Adding a device then never changes
+      the boot struct &mdash; it adds a devicetree node. The two axes
+      (firmware/handoff vs. hardware description) are independent; these bindings
+      apply whether the firmware is the emulator-as-firmware path (D1) or a later
+      UEFI handoff (D1b).
+    </p>
+
+    <h2>2. The blob (FDT/DTB)</h2>
+    <p>
+      A DTB is a big-endian binary tree: a 40-byte header (magic
+      <code>0xD00DFEED</code>, <code>totalsize</code>, the offsets/sizes of the
+      structure and strings blocks, the memory-reservation offset, and
+      <code>version</code>/<code>last_comp_version</code>), a memory-reservation
+      block of <code>(address, size)</code> u64 pairs terminated by an all-zero
+      entry, a structure block of 32-bit tokens
+      (<code>FDT_BEGIN_NODE</code>/<code>END_NODE</code>/<code>PROP</code>/<code>NOP</code>/<code>END</code>),
+      and a deduplicated strings block holding the property names. A devicetree
+      <em>cell</em> is a big-endian <code>u32</code>; a <code>u64</code> is the high
+      cell followed by the low cell. StackVM emits version 17 (last-compatible 16).
+    </p>
+
+    <h2>3. Address model</h2>
+    <p>
+      StackVM physical addresses are 64-bit and the MMIO aperture lives high
+      (<code>0xFFFF0000</code>+), so the root and the <code>/soc</code> bus declare
+      <code>#address-cells = &lt;2&gt;</code> and <code>#size-cells = &lt;2&gt;</code>.
+      A <code>reg</code> entry is therefore four cells:
+      <code>&lt;base_hi base_lo size_hi size_lo&gt;</code>. The <code>/cpus</code>
+      node is the usual exception: <code>#address-cells = &lt;1&gt;</code>,
+      <code>#size-cells = &lt;0&gt;</code>, so a CPU <code>reg</code> is a single
+      cell holding the core id.
+    </p>
+
+    <h2>4. Node bindings</h2>
+
+    <h3>4.1 <code>/</code> (root)</h3>
+    <table>
+      <tr><th>Property</th><th>Value</th></tr>
+      <tr><td><code>#address-cells</code></td><td><code>&lt;2&gt;</code></td></tr>
+      <tr><td><code>#size-cells</code></td><td><code>&lt;2&gt;</code></td></tr>
+      <tr><td><code>compatible</code></td><td><code>"stackvm,virt"</code></td></tr>
+      <tr><td><code>model</code></td><td><code>"StackVM Virtual Machine"</code></td></tr>
+    </table>
+
+    <h3>4.2 <code>/memory</code></h3>
+    <p>
+      A node named <code>memory@&lt;base&gt;</code> with
+      <code>device_type = "memory"</code> and a <code>reg</code> that lists the
+      RAM-backed regions of the D1 memory map (contiguous runs coalesced) as
+      <code>&lt;base size&gt;</code> pairs. The low reserved/firmware guard region
+      below the kernel is <em>not</em> advertised here; the in-use kernel image and
+      bootdata are advertised but carved out under <code>/reserved-memory</code>.
+    </p>
+
+    <h3>4.3 <code>/reserved-memory</code></h3>
+    <p>
+      Standard reserved-memory container (<code>#address-cells</code>/<code>#size-cells</code>
+      = <code>&lt;2&gt;</code>, empty <code>ranges</code>). One child per carve-out
+      &mdash; <code>kernel@&lt;base&gt;</code> and <code>bootdata@&lt;base&gt;</code> &mdash;
+      each with a <code>reg</code> and the <code>no-map</code> flag so the kernel
+      keeps the region out of its allocator.
+    </p>
+
+    <h3>4.4 <code>/chosen</code></h3>
+    <table>
+      <tr><th>Property</th><th>Meaning</th></tr>
+      <tr><td><code>bootargs</code></td><td>the kernel command line (== <code>StartupData.cmdline</code>)</td></tr>
+      <tr><td><code>stdout-path</code></td><td>full path of the early-console device (the UART, e.g. <code>"/soc/serial@ffff0000"</code>)</td></tr>
+      <tr><td><code>linux,initrd-start</code></td><td>u64 physical base of the initramfs (omitted if none)</td></tr>
+      <tr><td><code>linux,initrd-end</code></td><td>u64 physical end (base + size) of the initramfs</td></tr>
+    </table>
+
+    <h3>4.5 <code>/cpus</code></h3>
+    <p>
+      <code>#address-cells = &lt;1&gt;</code>, <code>#size-cells = &lt;0&gt;</code>,
+      with one <code>cpu@N</code> child per online core
+      (<code>StartupData.core_count</code>). Each carries
+      <code>device_type = "cpu"</code>, <code>compatible = "stackvm,cpu"</code>, and
+      <code>reg = &lt;N&gt;</code>, where <code>N</code> is the value the core reads
+      from <a href="SYSREG.html">SVSR_CORE_ID</a> (0x0A).
+    </p>
+
+    <h3>4.6 <code>/soc</code></h3>
+    <p>
+      A <code>simple-bus</code> (<code>#address-cells</code>/<code>#size-cells</code>
+      = <code>&lt;2&gt;</code>, empty <code>ranges</code> &mdash; identity mapping)
+      holding the MMIO devices. Each device node carries a <code>compatible</code>,
+      a <code>reg</code> window matching <code>stackvm_mmio.h</code>, and (for
+      interrupting devices) an <code>interrupts</code> list plus
+      <code>interrupt-parent = &lt;&amp;intc&gt;</code>.
+    </p>
+
+    <h4>Interrupt controller</h4>
+    <p>
+      <code>interrupt-controller@ffff1000</code>, <code>compatible =
+      "stackvm,intc"</code>, with the <code>interrupt-controller</code> flag,
+      <code>#interrupt-cells = &lt;1&gt;</code> (one cell per IRQ line), and a fixed
+      <code>phandle = &lt;1&gt;</code>. It models the D5 MMIO interrupt controller
+      (pending/enable/claim/EOI/route/priority), whose lines are delivered as
+      architectural interrupt vectors per <a href="Interrupts.html">Interrupts.html</a>.
+    </p>
+
+    <table>
+      <tr><th>Node</th><th><code>compatible</code></th><th><code>reg</code> base</th><th><code>interrupts</code></th></tr>
+      <tr><td><code>serial@ffff0000</code></td><td><code>"stackvm,uart"</code></td><td><code>0xFFFF0000</code></td><td><code>&lt;1&gt;</code> (SVM_IRQ_UART0)</td></tr>
+      <tr><td><code>interrupt-controller@ffff1000</code></td><td><code>"stackvm,intc"</code></td><td><code>0xFFFF1000</code></td><td>&mdash;</td></tr>
+      <tr><td><code>rtc@ffff2000</code></td><td><code>"stackvm,rtc"</code></td><td><code>0xFFFF2000</code></td><td><code>&lt;3&gt;</code> (SVM_IRQ_RTC)</td></tr>
+      <tr><td><code>virtio@ffff3000</code></td><td><code>"virtio,mmio"</code></td><td><code>0xFFFF3000</code></td><td><code>&lt;2&gt;</code> (SVM_IRQ_VIRTIO_BLK0)</td></tr>
+      <tr><td><code>virtio@ffff4000</code></td><td><code>"virtio,mmio"</code></td><td><code>0xFFFF4000</code></td><td><code>&lt;4&gt;</code> (SVM_IRQ_VIRTIO_NET0)</td></tr>
+    </table>
+    <p>
+      Every window is <code>SVM_MMIO_WINDOW_SIZE</code> (0x1000) bytes. The virtio
+      transports use the standard <code>"virtio,mmio"</code> binding; the device
+      class (block vs. net) is discovered from the transport's device-id register,
+      not the devicetree. A <strong>framebuffer</strong>
+      (<code>compatible = "simple-framebuffer"</code>) is reserved for D1b.3 and is
+      not emitted until that device exists.
+    </p>
+
+    <h2>5. Reference builder</h2>
+    <p>
+      <code>StackVM.dt_bindings.build_stackvm_fdt(...)</code> emits a
+      binding-conformant tree from a machine description (memory regions, reserved
+      regions, core count, command line, initramfs extent, and a device list that
+      defaults to <code>default_soc_devices()</code>). The companion
+      <code>dt_regions_from_mem_map(mem_map)</code> derives the <code>/memory</code>
+      and <code>/reserved-memory</code> region lists from a D1 boot memory map. The
+      emulator wiring that calls this from the boot path and slims
+      <code>StartupData</code> is D1a.3.
+    </p>
+
+    <h2>6. Emulator notes</h2>
+    <p>
+      <code>StackVM/devicetree.py</code> is a small libfdt-equivalent: a builder
+      API (<code>FdtNode.set_u32</code>/<code>set_u64</code>/<code>set_string</code>/
+      <code>set_stringlist</code>/<code>set_cells</code>/<code>set_phandle</code>) and
+      a reader API (<code>FlattenedDeviceTree.from_dtb</code>,
+      <code>get_node(path)</code>, and the matching typed <code>get_*</code>
+      accessors). The bindings and the round-trip are covered by
+      <code>tests/test_devicetree.py</code>.
+    </p>
+  </body>
+</html>
