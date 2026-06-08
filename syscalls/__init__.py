@@ -20,6 +20,8 @@ The function ``build_dispatcher`` accepts a list of set names:
                    SYS_SEEK, SYS_MMAP, SYS_MUNMAP, SYS_CLOCK_NS, SYS_SLEEP_NS,
                    plus legacy 0x01 / 0x21 print helpers.
     ``"pygame"`` — SYS_PYG_* (0x02–0x0C), requires PyGame installed.
+    ``"paravirt"`` — kernel-only D4 paravirt device hypercalls via the
+                     CALL_E/IS_INT doorbell INT_PARAVIRT (0x12).
     ``"all"``    — shorthand for ["os", "pygame"].
     ``"none"``   — empty dispatcher (unrecognised syscalls emit a warning).
 """
@@ -40,6 +42,7 @@ class SyscallDispatcher:
 
     def __init__(self, sets: Optional[List[BaseSyscallSet]] = None) -> None:
         self._handlers: Dict[int, Callable[[SyscallContext], None]] = {}
+        self._hypercall_handlers: Dict[int, Callable] = {}
         for s in sets or []:
             self.register_set(s)
 
@@ -50,6 +53,7 @@ class SyscallDispatcher:
     def register_set(self, s: BaseSyscallSet) -> None:
         """Add all handlers from *s*, overriding any existing ones with the same number."""
         self._handlers.update(s.handlers)
+        self._hypercall_handlers.update(getattr(s, "hypercall_handlers", {}))
 
     def register(self, n: int, fn: Callable[[SyscallContext], None]) -> None:
         """Register a single handler for syscall number *n*."""
@@ -67,22 +71,35 @@ class SyscallDispatcher:
             return
         handler(ctx)
 
+    def dispatch_hypercall(self, vm: object, _int_n: int) -> None:
+        from ..paravirt import dispatch_paravirt_hypercall  # noqa: PLC0415
+
+        dispatch_paravirt_hypercall(vm, self._hypercall_handlers)
+
     # ------------------------------------------------------------------
     # VM attachment — PyStackVM
     # ------------------------------------------------------------------
 
     def attach_to_py_vm(self, vm: object) -> None:
         """
-        Replace ``vm.virt_syscall`` with a closure that dispatches through this
-        dispatcher.  The original method is discarded.
+        Attach enabled service lanes to a Python VM.  User syscall handlers
+        replace ``vm.virt_syscall``; paravirt hypercall handlers install the
+        separate ``vm.paravirt_hypercall`` doorbell callback.
         """
-        # Store a reference to self so the closure captures it correctly.
         dispatcher = self
 
-        def _virt_syscall(n: int) -> None:
-            dispatcher.dispatch(vm, n)
+        if self._handlers:
+            # Store a reference to self so the closure captures it correctly.
+            def _virt_syscall(n: int) -> None:
+                dispatcher.dispatch(vm, n)
 
-        vm.virt_syscall = _virt_syscall
+            vm.virt_syscall = _virt_syscall
+
+        if self._hypercall_handlers:
+            def _paravirt_hypercall(vm_inst: object, int_n: int) -> None:
+                dispatcher.dispatch_hypercall(vm_inst, int_n)
+
+            vm.paravirt_hypercall = _paravirt_hypercall
 
     # ------------------------------------------------------------------
     # VM attachment — CppStackVM
@@ -102,6 +119,11 @@ class SyscallDispatcher:
         NOTE: the ctypes callback object is stored on *vm* as
         ``vm._syscall_callback`` to prevent premature garbage collection.
         """
+        if self._hypercall_handlers:
+            raise NotImplementedError(
+                "paravirt hypercalls are implemented for PyStackVM; C++ parity "
+                "is tracked separately"
+            )
         try:
             from ..CppStackVM import VirtSyscallType, _SimpleStruct  # type: ignore[attr-defined]
         except ImportError as exc:
@@ -166,7 +188,7 @@ def build_dispatcher(names: List[str]) -> SyscallDispatcher:
     """
     Build a SyscallDispatcher from a list of set names.
 
-    Valid names: ``"none"``, ``"os"``, ``"pygame"``, ``"all"``.
+    Valid names: ``"none"``, ``"os"``, ``"pygame"``, ``"paravirt"``, ``"all"``.
     """
     sets: List[BaseSyscallSet] = []
     if "all" in names:
@@ -183,10 +205,14 @@ def build_dispatcher(names: List[str]) -> SyscallDispatcher:
             from .pygame_sys import PygameSyscallSet  # noqa: PLC0415
 
             sets.append(PygameSyscallSet())
+        elif name == "paravirt":
+            from ..paravirt import ParavirtDeviceSet  # noqa: PLC0415
+
+            sets.append(ParavirtDeviceSet())
         else:
             raise ValueError(
                 f"Unknown syscall set name: {name!r}. "
-                f"Valid names: none, os, pygame, all"
+                f"Valid names: none, os, pygame, paravirt, all"
             )
 
     return SyscallDispatcher(sets)

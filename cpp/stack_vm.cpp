@@ -347,6 +347,7 @@ enum StackVM_INT
   INT_INVAL_SYSCALL = 0x0F,
   INT_HW_IO = 0x10,
   INT_TIMER = 0x11,
+  INT_PARAVIRT = 0x12,            // kernel-only host paravirt doorbell
   INT_TLB_SHOOTDOWN_DONE = 0x1E, // async TLB-shootdown completion (-> done_core)
   INT_TLB_SHOOTDOWN = 0x1F       // TLB-shootdown request (remote-interrupt path)
 };

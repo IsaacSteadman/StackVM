@@ -245,3 +245,44 @@ timer's delivery priority is the priority field of the `INT_TIMER` ISR-table
 entry unless the source pins one explicitly. (The interval is host-programmed in
 the emulator today; a kernel-facing MMIO timer-register interface arrives with
 the MMIO device framework.)
+
+Paravirt device doorbell (Phase-1 bring-up)
+-------------------------------------------
+
+Before the MMIO device framework is available, a guest kernel can reach a small
+host-backed paravirt device layer through a reserved software-interrupt
+doorbell:
+
+- Doorbell vector: `INT_PARAVIRT` / `SVM_INT_PARAVIRT` = `0x12`.
+- Instruction: `CALL_E` with `IS_SYS=0`, `IS_INT=1`, immediate interrupt byte
+  `0x12`.
+- Privilege: kernel-only. If a user-mode program rings this doorbell while a
+  host paravirt handler is installed, the VM raises `INT_PROTECT_FAULT`.
+- Separation from syscalls: this path is not `CALL_E/SYSCALL`, does not consult
+  `SVSR_SYS_FN`, and does not use the virtualized user-syscall callback.
+
+The guest stack frame at doorbell entry is six little-endian `uint64_t` values:
+
+| Offset | Field |
+| --- | --- |
+| `sp + 0` | hypercall number (`SVMPV_HCALL_*`) |
+| `sp + 8` | argument byte count (`SVMPV_ARG_BYTES`, currently 32) |
+| `sp + 16` | `arg0` |
+| `sp + 24` | `arg1` |
+| `sp + 32` | `arg2` |
+| `sp + 40` | `arg3`, also the return-value slot |
+
+Hypercall numbers are documented in `StackVM/include/stackvm_boot.h` and are:
+
+| Number | Name | Arguments | Return |
+| --- | --- | --- | --- |
+| `0x00` | `SVMPV_HCALL_CONSOLE_WRITE` | `(buf, len, 0, 0)` | bytes written |
+| `0x01` | `SVMPV_HCALL_CONSOLE_READ` | `(buf, len, 0, 0)` | bytes read |
+| `0x02` | `SVMPV_HCALL_BLOCK_READ` | `(dev, byte_offset, buf, len)` | bytes read |
+| `0x03` | `SVMPV_HCALL_BLOCK_WRITE` | `(dev, byte_offset, buf, len)` | bytes written |
+| `0x04` | `SVMPV_HCALL_RTC_NOW_NS` | `(0, 0, 0, 0)` | Unix time in nanoseconds |
+| `0x05` | `SVMPV_HCALL_ENTROPY` | `(buf, len, flags=0, 0)` | entropy bytes written |
+
+Errors are returned as unsigned 64-bit two's-complement negative errno values:
+`SVMPV_EIO` (-5), `SVMPV_ENODEV` (-19), `SVMPV_EINVAL` (-22),
+`SVMPV_ENOSPC` (-28), and `SVMPV_ENOSYS` (-38).

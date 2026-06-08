@@ -156,6 +156,20 @@
           <td></td>
         </tr>
         <tr>
+          <td>0x12</td>
+          <td>PARAVIRT</td>
+          <td>
+            Kernel-only paravirt device doorbell for phase-1 console, block,
+            RTC, and entropy services. This vector is handled by the host when a
+            paravirt device layer is installed; it is separate from
+            CALL_E/SYSCALL.
+          </td>
+          <td>Guest stack pointer to the hypercall frame</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
           <td>0x1E</td>
           <td>TLB_SHOOTDOWN_DONE</td>
           <td>

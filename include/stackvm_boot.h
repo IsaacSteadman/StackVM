@@ -51,6 +51,38 @@
 #define SVMEM_BOOTDATA 5u  /* occupied by StartupData and its sub-tables */
 
 /*
+ * Phase-1 paravirt device doorbell.
+ *
+ * Guest kernels use CALL_E with IS_SYS=0, IS_INT=1 and immediate interrupt
+ * vector SVM_INT_PARAVIRT while running in kernel mode.  This is separate from
+ * CALL_E/SYSCALL, which remains a user->kernel syscall transition.
+ *
+ * The stack frame at doorbell entry is six little-endian uint64_t values:
+ *
+ *   sp +  0: hypercall number (SVMPV_HCALL_*)
+ *   sp +  8: argument byte count (SVMPV_ARG_BYTES, currently 32)
+ *   sp + 16: arg0
+ *   sp + 24: arg1
+ *   sp + 32: arg2
+ *   sp + 40: arg3, also the return-value slot
+ */
+#define SVM_INT_PARAVIRT 0x12u
+#define SVMPV_ARG_BYTES 32u
+
+#define SVMPV_HCALL_CONSOLE_WRITE 0x00u /* (buf, len, 0, 0) -> bytes */
+#define SVMPV_HCALL_CONSOLE_READ 0x01u  /* (buf, len, 0, 0) -> bytes */
+#define SVMPV_HCALL_BLOCK_READ 0x02u    /* (dev, offset, buf, len) -> bytes */
+#define SVMPV_HCALL_BLOCK_WRITE 0x03u   /* (dev, offset, buf, len) -> bytes */
+#define SVMPV_HCALL_RTC_NOW_NS 0x04u    /* () -> Unix time in nanoseconds */
+#define SVMPV_HCALL_ENTROPY 0x05u       /* (buf, len, flags=0, 0) -> bytes */
+
+#define SVMPV_EIO ((uint64_t)-5)
+#define SVMPV_ENODEV ((uint64_t)-19)
+#define SVMPV_EINVAL ((uint64_t)-22)
+#define SVMPV_ENOSPC ((uint64_t)-28)
+#define SVMPV_ENOSYS ((uint64_t)-38)
+
+/*
  * One physical memory region.  The map covers [0, total_ram) with no gaps.
  */
 struct MemMapEntry {

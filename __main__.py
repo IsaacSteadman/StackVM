@@ -78,7 +78,7 @@ _vm_flags.add_argument(
     default=[],
     dest="syscalls",
     help=(
-        "syscall sets to enable: os, pygame, all, none "
+        "syscall/device sets to enable: os, pygame, paravirt, all, none "
         "(default: none — the VM's built-in virt_syscall is used)"
     ),
 )
@@ -202,7 +202,7 @@ _boot_parser.add_argument(
     metavar="SET",
     default=[],
     dest="syscalls",
-    help="syscall sets to enable: os, pygame, all, none (default: none)",
+    help="syscall/device sets to enable: os, pygame, paravirt, all, none (default: none)",
 )
 
 

@@ -319,6 +319,7 @@ INT_PAGE_FAULT = 0x0E
 INT_INVAL_SYSCALL = 0x0F
 INT_HW_IO = 0x10
 INT_TIMER = 0x11
+INT_PARAVIRT = 0x12  # synchronous host paravirt doorbell (kernel-only)
 INT_TLB_SHOOTDOWN_DONE = 0x1E  # async TLB-shootdown completion (delivered to done_core)
 INT_TLB_SHOOTDOWN = 0x1F  # TLB-shootdown request (remote-interrupt fallback path)
 INT_LST = (
@@ -342,7 +343,8 @@ INT_LST = (
         "HW_IO",  # 0x10
         "TIMER",  # 0x11
     ]
-    + ["UNKNOWN"] * 12  # 0x12 .. 0x1D
+    + ["PARAVIRT"]  # 0x12
+    + ["UNKNOWN"] * 11  # 0x13 .. 0x1D
     + ["TLB_SHOOTDOWN_DONE"]  # 0x1E
     + ["TLB_SHOOTDOWN"]  # 0x1F
     + ["UNKNOWN"] * 224  # 0x20 .. 0xFF
@@ -1489,6 +1491,9 @@ def vm_call_ext(vm_inst):
             if int_n is None:
                 vm_inst.ip -= 2
                 return
+            if int_n == INT_PARAVIRT and vm_inst.paravirt_hypercall is not None:
+                vm_inst.handle_paravirt_doorbell(int_n)
+                return
             vm_inst.switch_to_interrupt(int_n)
         elif a & 0x40:
             addr = vm_inst.pop(8)
@@ -2279,6 +2284,10 @@ class VirtualMachine(object):
         self.objects = ObjectIdAllocator(0, 1 << 64)
         self.pyg_index = -1
         self.apic = None
+        # Optional host-side handler for the D4 paravirt doorbell.  This is not
+        # the virtualized syscall path: guest kernels reach it with
+        # CALL_E/IS_INT vector INT_PARAVIRT while running at kernel privilege.
+        self.paravirt_hypercall = None
         # Optional ProgrammableIntervalTimer driving INT_TIMER / the scheduler
         # tick.  Advanced once per retired instruction by the interrupt-aware
         # execution loops (and step); None means no timer is attached.
@@ -2954,6 +2963,13 @@ class VirtualMachine(object):
             self.set(8, self.sp + 32, res)
         else:
             print("WARN: unrecognized syscall number %u" % n)
+
+    def handle_paravirt_doorbell(self, int_n: int):
+        """Enter the host paravirt layer through the reserved kernel doorbell."""
+        if self.priv_lvl != 0:
+            self.trap(INT_PROTECT_FAULT, int_n, self.ip)
+            return
+        self.paravirt_hypercall(self, int_n)
 
     def load_program(self, memory, at_addr=0, in_virt_space=True):
         """
