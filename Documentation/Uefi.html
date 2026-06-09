@@ -1,0 +1,363 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM ABI Documentation | UEFI / EFIAPI</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>StackVM UEFI / EFIAPI ABI (Workstream D1b.2, part of E1)</h1>
+    <p>
+      This page specifies how <strong>UEFI firmware and UEFI applications</strong>
+      run on StackVM: the <code>EFIAPI</code> calling convention, the
+      <code>EFI_SYSTEM_TABLE</code> / Boot-Services / Runtime-Services table
+      layouts, the image entry handoff
+      <code>efi_main(ImageHandle, SystemTable)</code>, the GUID / handle /
+      protocol model, the EFI memory-map descriptor format, and the
+      <code>ExitBootServices</code> / event / TPL semantics. It is the contract
+      that the (separately-built) UEFI firmware
+      (<a href="#firmware">D1b.4</a>) and any EFI application / EFI-stub kernel
+      target. The image <em>container</em> format — PE32+/COFF with a
+      <code>.reloc</code> base-relocation table — is specified separately
+      alongside the toolchain (workstream <strong>D1b.1</strong>,
+      <code>pe_file.py</code>); this page only references it.
+    </p>
+    <p>
+      The design follows the UEFI 2.x specification field-for-field so a stock
+      EFI-stub or GRUB-as-an-<code>.efi</code> sees the layouts it expects; the
+      only StackVM-specific parts are (a) the calling convention (StackVM is a
+      stack machine, not x86-64), (b) the firmware/device backends
+      (<a href="#firmware">D1b.3/D1b.4</a>, which map onto the D2–D5 interrupt /
+      timer / device substrate), and (c) the use of a <strong>devicetree</strong>
+      configuration table (pairing with <strong>D1a</strong>) instead of
+      ACPI/AML.
+    </p>
+
+    <h2 id="efiapi">The <code>EFIAPI</code> calling convention</h2>
+    <p>
+      On real hardware <code>EFIAPI</code> pins UEFI to the Microsoft x64
+      register convention. StackVM has no general-purpose registers, so on
+      StackVM <strong><code>EFIAPI</code> is the native StackVM C calling
+      convention</strong> — the same one the compiler emits for an ordinary C
+      call (see <a href="CALL.html">CALL</a>/<a href="RET.html">RET</a>). A port
+      that marks a function <code>EFIAPI</code> (or
+      <code>__attribute__((ms_abi))</code>, accepted and ignored) gets exactly
+      the standard ABI:
+    </p>
+    <ul>
+      <li>
+        <strong>Argument passing.</strong> Arguments are pushed by the
+        <em>caller</em>, right-to-left, so the <em>first</em> argument ends up
+        nearest the call frame and is reached at the lowest positive offset from
+        the callee's base pointer. Each <code>UINTN</code>/<code>INTN</code>,
+        pointer, <code>EFI_HANDLE</code>, <code>EFI_STATUS</code> and
+        <code>BOOLEAN</code> argument occupies one <strong>8-byte</strong> stack
+        slot; smaller integers are widened to 8 bytes. Structures larger than 8
+        bytes are passed by reference (the caller materialises a copy and passes
+        its address), matching UEFI usage where aggregates are always passed via
+        pointer.
+      </li>
+      <li>
+        <strong>Return value.</strong> The caller reserves the return slot
+        <em>below</em> the arguments (an <code>ADD_SP</code> of the return size)
+        before pushing arguments; the callee writes the result there. UEFI
+        functions return <code>EFI_STATUS</code> (an <code>UINTN</code>, i.e. a
+        64-bit value), so the return slot is 8 bytes.
+      </li>
+      <li>
+        <strong>Frame + cleanup.</strong> <code>CALL</code> pushes the previous
+        base pointer and the return address and sets <code>bp = sp</code>;
+        <code>RET</code> restores them. The <strong>caller</strong> pops the
+        argument area (an <code>RST_SP</code> of the total argument size) after
+        the call returns — the return slot it allocated survives. This is a
+        caller-cleanup convention, so variadic EFI services (e.g.
+        <code>ConOut-&gt;OutputString</code> style helpers built on it) work
+        without callee knowledge of the argument count.
+      </li>
+      <li>
+        <strong>Status encoding.</strong> <code>EFI_STATUS</code> is an
+        <code>UINTN</code>; an error sets the high bit (bit&nbsp;63 on the 64-bit
+        StackVM), a success or warning clears it. <code>EFI_SUCCESS = 0</code>;
+        common errors are <code>EFI_LOAD_ERROR = 0x8000000000000001</code>,
+        <code>EFI_INVALID_PARAMETER = 0x8000000000000002</code>,
+        <code>EFI_UNSUPPORTED = 0x8000000000000003</code>,
+        <code>EFI_BUFFER_TOO_SMALL = 0x8000000000000005</code>,
+        <code>EFI_NOT_READY = 0x8000000000000006</code>,
+        <code>EFI_NOT_FOUND = 0x800000000000000E</code>.
+      </li>
+    </ul>
+
+    <h2 id="types">Base types</h2>
+    <table>
+      <tr><th>Type</th><th>Size</th><th>Notes</th></tr>
+      <tr><td><code>BOOLEAN</code></td><td>1</td><td>0 = FALSE, 1 = TRUE</td></tr>
+      <tr><td><code>CHAR8</code></td><td>1</td><td>ASCII</td></tr>
+      <tr><td><code>CHAR16</code></td><td>2</td><td>UCS-2 little-endian (UEFI strings)</td></tr>
+      <tr><td><code>UINTN</code> / <code>INTN</code></td><td>8</td><td>native word = 64-bit on StackVM</td></tr>
+      <tr><td><code>EFI_STATUS</code></td><td>8</td><td><code>UINTN</code>; high bit = error</td></tr>
+      <tr><td><code>EFI_HANDLE</code> / <code>EFI_EVENT</code></td><td>8</td><td>opaque pointer</td></tr>
+      <tr><td><code>EFI_PHYSICAL_ADDRESS</code> / <code>EFI_VIRTUAL_ADDRESS</code></td><td>8</td><td>UINT64</td></tr>
+      <tr><td><code>EFI_TPL</code></td><td>8</td><td><code>UINTN</code>; see <a href="#tpl">TPL</a></td></tr>
+      <tr><td><code>EFI_GUID</code></td><td>16</td><td>Data1:UINT32, Data2:UINT16, Data3:UINT16, Data4[8]:UINT8 — mixed-endian exactly as UEFI</td></tr>
+    </table>
+    <p>
+      Every table is prefixed by an <code>EFI_TABLE_HEADER</code> (24 bytes):
+      <code>Signature</code> (UINT64), <code>Revision</code> (UINT32),
+      <code>HeaderSize</code> (UINT32), <code>CRC32</code> (UINT32),
+      <code>Reserved</code> (UINT32). <code>Revision</code> carries the UEFI
+      revision (e.g. <code>2.70 = (2&lt;&lt;16)|70</code>); the firmware computes
+      <code>CRC32</code> over the whole table with the field zeroed.
+    </p>
+
+    <h2 id="systemtable">EFI_SYSTEM_TABLE</h2>
+    <p>
+      Field order and 8-byte-aligned offsets (all pointers/handles are 8 bytes;
+      <code>FirmwareRevision</code> is a UINT32 followed by 4 bytes of padding so
+      the table stays 8-aligned):
+    </p>
+    <table>
+      <tr><th>Off</th><th>Field</th><th>Type</th></tr>
+      <tr><td>0x00</td><td>Hdr</td><td>EFI_TABLE_HEADER (Signature <code>0x5453595320494249</code> "IBI SYST")</td></tr>
+      <tr><td>0x18</td><td>FirmwareVendor</td><td>CHAR16*</td></tr>
+      <tr><td>0x20</td><td>FirmwareRevision</td><td>UINT32 (+4 pad)</td></tr>
+      <tr><td>0x28</td><td>ConsoleInHandle</td><td>EFI_HANDLE</td></tr>
+      <tr><td>0x30</td><td>ConIn</td><td>EFI_SIMPLE_TEXT_INPUT_PROTOCOL*</td></tr>
+      <tr><td>0x38</td><td>ConsoleOutHandle</td><td>EFI_HANDLE</td></tr>
+      <tr><td>0x40</td><td>ConOut</td><td>EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL*</td></tr>
+      <tr><td>0x48</td><td>StandardErrorHandle</td><td>EFI_HANDLE</td></tr>
+      <tr><td>0x50</td><td>StdErr</td><td>EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL*</td></tr>
+      <tr><td>0x58</td><td>RuntimeServices</td><td>EFI_RUNTIME_SERVICES*</td></tr>
+      <tr><td>0x60</td><td>BootServices</td><td>EFI_BOOT_SERVICES*</td></tr>
+      <tr><td>0x68</td><td>NumberOfTableEntries</td><td>UINTN</td></tr>
+      <tr><td>0x70</td><td>ConfigurationTable</td><td>EFI_CONFIGURATION_TABLE*</td></tr>
+    </table>
+    <p>
+      The <code>ConfigurationTable</code> is an array of
+      <code>EFI_CONFIGURATION_TABLE { EFI_GUID VendorGuid; VOID *VendorTable; }</code>
+      (24 bytes each). StackVM publishes the machine description as a
+      <strong>devicetree blob</strong> (see <strong>D1a</strong>) under
+      <code>EFI_DTB_TABLE_GUID = {b1b621d5-f19c-41a5-830b-d9152c69aae0}</code>;
+      <code>VendorTable</code> points at the flattened DTB. ACPI/SMBIOS GUIDs are
+      not published (no AML interpreter), so a kernel discovers hardware through
+      the DTB exactly as in the D1a thin-handoff path.
+    </p>
+
+    <h2 id="bootservices">EFI_BOOT_SERVICES</h2>
+    <p>
+      <code>EFI_BOOT_SERVICES</code> is an <code>EFI_TABLE_HEADER</code>
+      (Signature <code>0x56524553544f4f42</code> "BOOTSERV") followed by the UEFI
+      2.x member function pointers, in spec order, each an <strong>8-byte
+      <code>EFIAPI</code> function pointer</strong>. The offset of member
+      <em>n</em> is <code>0x18 + 8*n</code>. The members a minimal firmware
+      (D1b.4a) and an EFI-stub exercise are:
+    </p>
+    <table>
+      <tr><th>Off</th><th>Member</th><th>Backed by</th></tr>
+      <tr><td>0x18</td><td>RaiseTPL</td><td>D2 interrupt priority mask</td></tr>
+      <tr><td>0x20</td><td>RestoreTPL</td><td>D2 interrupt priority mask</td></tr>
+      <tr><td>0x28</td><td>AllocatePages</td><td>firmware page allocator over the D1 memory map</td></tr>
+      <tr><td>0x30</td><td>FreePages</td><td>&nbsp;</td></tr>
+      <tr><td>0x38</td><td>GetMemoryMap</td><td>D1 memory map &rarr; EFI descriptors</td></tr>
+      <tr><td>0x40</td><td>AllocatePool</td><td>firmware pool allocator</td></tr>
+      <tr><td>0x48</td><td>FreePool</td><td>&nbsp;</td></tr>
+      <tr><td>0x50</td><td>CreateEvent</td><td>event objects (see <a href="#events">events</a>)</td></tr>
+      <tr><td>0x58</td><td>SetTimer</td><td>D3 programmable interval timer / <code>INT_TIMER</code></td></tr>
+      <tr><td>0x60</td><td>WaitForEvent</td><td>&nbsp;</td></tr>
+      <tr><td>0x68</td><td>SignalEvent</td><td>&nbsp;</td></tr>
+      <tr><td>0x70</td><td>CloseEvent</td><td>&nbsp;</td></tr>
+      <tr><td>0x78</td><td>CheckEvent</td><td>&nbsp;</td></tr>
+      <tr><td>…</td><td>InstallProtocolInterface … (protocol DB)</td><td>firmware handle database</td></tr>
+      <tr><td>0x98</td><td>HandleProtocol</td><td>protocol lookup by GUID on a handle</td></tr>
+      <tr><td>…</td><td>RegisterProtocolNotify / LocateHandle / LocateDevicePath</td><td>&nbsp;</td></tr>
+      <tr><td>0xD8</td><td>LoadImage / StartImage / Exit / UnloadImage / ExitBootServices</td><td><a href="#exitbs">ExitBootServices</a></td></tr>
+      <tr><td>…</td><td>GetNextMonotonicCount / Stall / SetWatchdogTimer</td><td>D3 timebase / <code>SVSR_CYCLE_COUNT</code></td></tr>
+      <tr><td>…</td><td>OpenProtocol / CloseProtocol / LocateProtocol / InstallMultipleProtocolInterfaces</td><td>protocol DB</td></tr>
+      <tr><td>…</td><td>CopyMem / SetMem / CreateEventEx</td><td>&nbsp;</td></tr>
+    </table>
+    <p>
+      The full member list and ordering are normative per UEFI 2.x; a port should
+      include the StackVM UEFI headers rather than hand-computing far offsets.
+      After <a href="#exitbs">ExitBootServices</a> succeeds, every
+      <code>EFI_BOOT_SERVICES</code> pointer is invalid.
+    </p>
+
+    <h2 id="runtimeservices">EFI_RUNTIME_SERVICES</h2>
+    <p>
+      <code>EFI_TABLE_HEADER</code> (Signature <code>0x56524553544e5552</code>
+      "RUNTSERV") + 8-byte <code>EFIAPI</code> pointers, spec order:
+      <code>GetTime</code>, <code>SetTime</code>, <code>GetWakeupTime</code>,
+      <code>SetWakeupTime</code>, <code>SetVirtualAddressMap</code>,
+      <code>ConvertPointer</code>, <code>GetVariable</code>,
+      <code>GetNextVariableName</code>, <code>SetVariable</code>,
+      <code>GetNextHighMonotonicCount</code>, <code>ResetSystem</code>
+      (and 2.x additions <code>UpdateCapsule</code>,
+      <code>QueryCapsuleCapabilities</code>, <code>QueryVariableInfo</code>).
+      <code>GetTime</code> is backed by the D5 RTC; the
+      <code>Get/SetVariable</code> family is backed by NVRAM variable storage
+      (host-file / block region, D1b.3). Runtime services remain callable after
+      <code>ExitBootServices</code>; once the OS calls
+      <code>SetVirtualAddressMap</code>, the firmware relocates the runtime
+      pointers and only the virtual mappings are valid thereafter.
+    </p>
+
+    <h2 id="entry">Image entry handoff</h2>
+    <p>
+      The entry point of every EFI image is
+    </p>
+    <pre>EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable);</pre>
+    <p>
+      The firmware (D1b.4) loads the PE32+/COFF image (D1b.1) at a firmware-chosen
+      base, applies the <code>.reloc</code> base relocations (the same
+      <code>R_STACKVM_RELATIVE</code> DIR64 fixups the linker emits), and
+      transfers control to <code>AddressOfEntryPoint</code> with
+      <code>ImageHandle</code> as the first <code>EFIAPI</code> argument and
+      <code>SystemTable</code> as the second. The image's PE
+      <strong>Subsystem</strong> field selects the entry semantics:
+      <code>EFI_APPLICATION</code> (10) returns to the firmware (or calls
+      <code>BootServices-&gt;Exit</code>); <code>EFI_BOOT_SERVICE_DRIVER</code>
+      (11) and <code>EFI_RUNTIME_DRIVER</code> (12) register protocols and
+      return <code>EFI_SUCCESS</code> to stay resident. These ids match the PE
+      writer (<code>pe_file.py</code> / the <code>--subsystem</code> flag).
+    </p>
+    <p>
+      An <code>ImageHandle</code> exposes <code>EFI_LOADED_IMAGE_PROTOCOL</code>
+      (image base/size, load options, the device it was loaded from), so an
+      application can find its own command line and a kernel EFI-stub can locate
+      the boot device. This is the standardized analogue of the D1
+      <code>StartupData</code>/<code>SVSR_SDP</code> handoff: under UEFI the
+      kernel obtains memory + cmdline + initrd via boot services and the DTB
+      configuration table rather than reading <code>StartupData</code> directly.
+    </p>
+
+    <h2 id="protocols">GUID / handle / protocol model</h2>
+    <p>
+      A <strong>handle</strong> (<code>EFI_HANDLE</code>) is an opaque pointer
+      into a firmware-internal database. Each handle carries a set of
+      <strong>protocol interfaces</strong>; a protocol is identified by an
+      <code>EFI_GUID</code> and its interface is a struct of
+      <code>EFIAPI</code> function pointers + data. A consumer obtains an
+      interface with <code>HandleProtocol(handle, &amp;Guid, &amp;Interface)</code>,
+      <code>OpenProtocol(...)</code>, or finds a provider with
+      <code>LocateProtocol(&amp;Guid, NULL, &amp;Interface)</code>; a driver
+      publishes one with <code>InstallProtocolInterface</code>. GUIDs are
+      compared by raw 16-byte value. Well-known protocols the StackVM firmware
+      backs (D1b.3) and the devices they map to:
+    </p>
+    <table>
+      <tr><th>Protocol</th><th>GUID</th><th>StackVM backend</th></tr>
+      <tr><td>EFI_LOADED_IMAGE_PROTOCOL</td><td>5b1b31a1-9562-11d2-8e3f-00a0c969723b</td><td>firmware (PE load record)</td></tr>
+      <tr><td>EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL</td><td>387477c2-69c7-11d2-8e39-00a0c969723b</td><td>D5 UART / D4 paravirt console</td></tr>
+      <tr><td>EFI_SIMPLE_TEXT_INPUT_PROTOCOL</td><td>387477c1-69c7-11d2-8e39-00a0c969723b</td><td>D5 UART RX</td></tr>
+      <tr><td>EFI_BLOCK_IO_PROTOCOL</td><td>964e5b21-6459-11d2-8e39-00a0c969723b</td><td>D5 virtio-blk</td></tr>
+      <tr><td>EFI_SIMPLE_FILE_SYSTEM_PROTOCOL</td><td>964e5b22-6459-11d2-8e39-00a0c969723b</td><td>FS over virtio-blk</td></tr>
+      <tr><td>EFI_GRAPHICS_OUTPUT_PROTOCOL</td><td>9042a9de-23dc-4a38-96fb-7aded080516a</td><td>framebuffer device (NEW in D1b.3)</td></tr>
+      <tr><td>EFI_DEVICE_PATH_PROTOCOL</td><td>09576e91-6d3f-11d2-8e39-00a0c969723b</td><td>firmware (device naming)</td></tr>
+    </table>
+
+    <h2 id="memmap">EFI memory-map descriptor</h2>
+    <p>
+      <code>GetMemoryMap(IN OUT UINTN *MapSize, OUT EFI_MEMORY_DESCRIPTOR *Map,
+      OUT UINTN *MapKey, OUT UINTN *DescriptorSize, OUT UINT32
+      *DescriptorVersion)</code> returns the current map. Each
+      <code>EFI_MEMORY_DESCRIPTOR</code> is 40 bytes:
+    </p>
+    <table>
+      <tr><th>Off</th><th>Field</th><th>Type</th></tr>
+      <tr><td>0x00</td><td>Type</td><td>UINT32 (EFI_MEMORY_TYPE)</td></tr>
+      <tr><td>0x04</td><td>(pad)</td><td>UINT32</td></tr>
+      <tr><td>0x08</td><td>PhysicalStart</td><td>EFI_PHYSICAL_ADDRESS</td></tr>
+      <tr><td>0x10</td><td>VirtualStart</td><td>EFI_VIRTUAL_ADDRESS</td></tr>
+      <tr><td>0x18</td><td>NumberOfPages</td><td>UINT64 (4 KiB pages)</td></tr>
+      <tr><td>0x20</td><td>Attribute</td><td>UINT64 (EFI_MEMORY_* caching/permission bits)</td></tr>
+    </table>
+    <p>
+      <strong>Consumers must stride by <code>DescriptorSize</code></strong>, not
+      <code>sizeof(EFI_MEMORY_DESCRIPTOR)</code>: the firmware may return a larger
+      descriptor for forward-compatibility (<code>DescriptorVersion = 1</code>).
+      The firmware derives the descriptors from the D1 physical memory map
+      (<code>SVMEM_*</code> region types &rarr; <code>EfiConventionalMemory</code>,
+      <code>EfiLoaderData</code>, <code>EfiReservedMemoryType</code>,
+      <code>EfiBootServicesData</code>, …). <code>MapKey</code> is an opaque
+      generation counter that increments whenever the map changes (a pool/page
+      allocation, a protocol install, etc.).
+    </p>
+
+    <h2 id="exitbs">ExitBootServices</h2>
+    <p>
+      <code>ExitBootServices(EFI_HANDLE ImageHandle, UINTN MapKey)</code> hands
+      ownership of memory to the OS and tears down boot services. The required
+      protocol, identical to real UEFI:
+    </p>
+    <ol>
+      <li>Call <code>GetMemoryMap</code> and record <code>MapKey</code>.</li>
+      <li>Call <code>ExitBootServices(ImageHandle, MapKey)</code>.</li>
+      <li>If it returns <code>EFI_INVALID_PARAMETER</code> the map changed since
+        step&nbsp;1 (the <code>MapKey</code> is stale); re-fetch the map and retry
+        <strong>once</strong> — between the two calls the OS must not allocate
+        (allocation changes the key again).</li>
+    </ol>
+    <p>
+      On success: all <code>EFI_BOOT_SERVICES</code> functions become invalid,
+      the firmware stops servicing the boot-time timer event, the firmware's
+      interrupt handlers are removed (the OS owns the ISR table and the D2/D3
+      controller from here), and only <code>EFI_RUNTIME_SERVICES</code> and the
+      configuration tables (the DTB) remain. The OS is then free to enable its
+      own paging and call <code>SetVirtualAddressMap</code> to virtualise the
+      runtime services.
+    </p>
+
+    <h2 id="events">Events, timers, and TPL</h2>
+    <p id="tpl">
+      <strong>Task Priority Levels (TPL)</strong> map directly onto the StackVM
+      per-core interrupt priority mask (FLAGS bits 0–7, see
+      <a href="stack_vm.md">the asynchronous-interrupt-delivery contract</a> /
+      D2). Raising TPL raises the running priority threshold so that
+      lower-priority interrupt sources are held pending; restoring it lowers the
+      threshold and releases them. The four architectural levels:
+    </p>
+    <table>
+      <tr><th>TPL</th><th>Value</th><th>StackVM meaning</th></tr>
+      <tr><td>TPL_APPLICATION</td><td>4</td><td>normal; all events may fire</td></tr>
+      <tr><td>TPL_CALLBACK</td><td>8</td><td>mask callback-level notifies</td></tr>
+      <tr><td>TPL_NOTIFY</td><td>16</td><td>mask signal notifies</td></tr>
+      <tr><td>TPL_HIGH_LEVEL</td><td>31</td><td>interrupts fully masked (FLAGS enable bit effectively off)</td></tr>
+    </table>
+    <p>
+      <strong>Events</strong> (<code>CreateEvent</code>/<code>CreateEventEx</code>)
+      carry a type, a notify-TPL, and an optional notify function. The relevant
+      types: <code>EVT_TIMER (0x80000000)</code>,
+      <code>EVT_NOTIFY_WAIT (0x00000100)</code>,
+      <code>EVT_NOTIFY_SIGNAL (0x00000200)</code>,
+      <code>EVT_SIGNAL_EXIT_BOOT_SERVICES (0x00000201)</code>. A timer event armed
+      with <code>SetTimer</code> is driven by the D3 programmable interval timer:
+      when <code>INT_TIMER (0x11)</code> fires, the firmware's timer ISR signals
+      the event (subject to D2 enable/priority gating, so a notify never preempts
+      an equal-or-higher TPL). <code>WaitForEvent</code> blocks at
+      <code>TPL_APPLICATION</code> until one of the supplied events is signalled;
+      <code>CheckEvent</code> polls; <code>SignalEvent</code> queues a notify;
+      <code>CloseEvent</code> destroys it. An
+      <code>EVT_SIGNAL_EXIT_BOOT_SERVICES</code> event's notify runs from inside
+      <a href="#exitbs">ExitBootServices</a>.
+    </p>
+
+    <h2 id="firmware">Where the firmware lives</h2>
+    <p>
+      This page is the <em>contract</em>. The pieces that <em>implement</em> it
+      are scheduled later in D1b:
+    </p>
+    <ul>
+      <li><strong>D1b.1</strong> — the PE32+/COFF container (DONE): the
+        <code>.efi</code> writer/reader, <code>.reloc</code> base relocations
+        (DIR64 over <code>R_STACKVM_RELATIVE</code>), and the
+        <code>readelf</code>/<code>objdump</code> PE views.</li>
+      <li><strong>D1b.3</strong> — the device/firmware substrate: Simple Text
+        In/Out over the UART (D5)/paravirt console (D4), Block I/O + Simple File
+        System over virtio-blk (D5), the timer/event model over D2/D3, the RTC,
+        NVRAM variable storage, and a framebuffer for Graphics Output.</li>
+      <li><strong>D1b.4</strong> — the UEFI firmware itself: it builds the tables
+        above, loads the EFI image, applies <code>.reloc</code> fixups, and calls
+        <code>efi_main</code>; it publishes the DTB configuration table (pairing
+        with <strong>D1a</strong>, skipping ACPI/AML).</li>
+    </ul>
+  </body>
+</html>
