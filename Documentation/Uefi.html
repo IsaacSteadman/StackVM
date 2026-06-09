@@ -249,7 +249,7 @@
       <tr><td>EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL</td><td>387477c2-69c7-11d2-8e39-00a0c969723b</td><td>D5 UART / D4 paravirt console</td></tr>
       <tr><td>EFI_SIMPLE_TEXT_INPUT_PROTOCOL</td><td>387477c1-69c7-11d2-8e39-00a0c969723b</td><td>D5 UART RX</td></tr>
       <tr><td>EFI_BLOCK_IO_PROTOCOL</td><td>964e5b21-6459-11d2-8e39-00a0c969723b</td><td>D5 virtio-blk</td></tr>
-      <tr><td>EFI_SIMPLE_FILE_SYSTEM_PROTOCOL</td><td>964e5b22-6459-11d2-8e39-00a0c969723b</td><td>FS over virtio-blk</td></tr>
+      <tr><td>EFI_SIMPLE_FILE_SYSTEM_PROTOCOL</td><td>0964e5b2-6459-11d2-8e39-00a0c969723b</td><td>FS over virtio-blk</td></tr>
       <tr><td>EFI_GRAPHICS_OUTPUT_PROTOCOL</td><td>9042a9de-23dc-4a38-96fb-7aded080516a</td><td>framebuffer device (NEW in D1b.3)</td></tr>
       <tr><td>EFI_DEVICE_PATH_PROTOCOL</td><td>09576e91-6d3f-11d2-8e39-00a0c969723b</td><td>firmware (device naming)</td></tr>
     </table>
@@ -342,22 +342,25 @@
 
     <h2 id="firmware">Where the firmware lives</h2>
     <p>
-      This page is the <em>contract</em>. The pieces that <em>implement</em> it
-      are scheduled later in D1b:
+      This page is the ABI contract, and the Python reference firmware now
+      implements the minimal custom path in <code>StackVM/uefi.py</code>:
     </p>
     <ul>
       <li><strong>D1b.1</strong> — the PE32+/COFF container (DONE): the
         <code>.efi</code> writer/reader, <code>.reloc</code> base relocations
         (DIR64 over <code>R_STACKVM_RELATIVE</code>), and the
         <code>readelf</code>/<code>objdump</code> PE views.</li>
-      <li><strong>D1b.3</strong> — the device/firmware substrate: Simple Text
+      <li><strong>D1b.3</strong> — the device/firmware substrate (DONE in the
+        Python reference): Simple Text
         In/Out over the UART (D5)/paravirt console (D4), Block I/O + Simple File
         System over virtio-blk (D5), the timer/event model over D2/D3, the RTC,
         NVRAM variable storage, and a framebuffer for Graphics Output.</li>
-      <li><strong>D1b.4</strong> — the UEFI firmware itself: it builds the tables
-        above, loads the EFI image, applies <code>.reloc</code> fixups, and calls
-        <code>efi_main</code>; it publishes the DTB configuration table (pairing
-        with <strong>D1a</strong>, skipping ACPI/AML).</li>
+      <li><strong>D1b.4</strong> — the minimal custom UEFI firmware itself
+        (DONE in the Python reference): it builds the tables above, loads the EFI
+        image, applies <code>.reloc</code> fixups, and enters
+        <code>efi_main(ImageHandle, SystemTable)</code>; it publishes the DTB
+        configuration table (pairing with <strong>D1a</strong>, skipping
+        ACPI/AML).</li>
     </ul>
   </body>
 </html>

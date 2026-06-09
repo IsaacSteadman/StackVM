@@ -24,6 +24,8 @@ SVM_MMIO_IC_BASE = SVM_MMIO_BASE + 0x1000
 SVM_MMIO_RTC_BASE = SVM_MMIO_BASE + 0x2000
 SVM_MMIO_VIRTIO_BLK0_BASE = SVM_MMIO_BASE + 0x3000
 SVM_MMIO_VIRTIO_NET0_BASE = SVM_MMIO_BASE + 0x4000
+SVM_MMIO_FRAMEBUFFER0_BASE = SVM_MMIO_BASE + 0x5000
+SVM_MMIO_FRAMEBUFFER0_PIXELS_BASE = SVM_MMIO_BASE + 0x100000
 
 SVM_MMIO_WINDOW_SIZE = 0x1000
 
@@ -55,6 +57,18 @@ IC_NO_PENDING = 0xFFFFFFFFFFFFFFFF
 # RTC register offsets.
 RTC_REG_NOW_NS = 0x00
 RTC_REG_NOW_SEC = 0x08
+
+# Simple framebuffer register offsets.
+FB_REG_WIDTH = 0x00
+FB_REG_HEIGHT = 0x08
+FB_REG_STRIDE = 0x10
+FB_REG_FORMAT = 0x18
+FB_REG_PIXEL_BASE = 0x20
+FB_REG_PIXEL_SIZE = 0x28
+FB_REG_DIRTY_SEQ = 0x30
+FB_REG_FLUSH = 0x38
+
+SVM_FB_FORMAT_XRGB8888 = 1
 
 # Virtio-MMIO-ish transport register offsets.  This is intentionally compact,
 # but the queue descriptor and avail/used rings follow virtio's shape closely
@@ -458,6 +472,99 @@ class RtcDevice(MmioDevice):
         return 0
 
 
+class FramebufferPixelDevice(MmioDevice):
+    """MMIO pixel aperture for :class:`FramebufferDevice`."""
+
+    def __init__(self, framebuffer: "FramebufferDevice") -> None:
+        super().__init__()
+        self.framebuffer = framebuffer
+
+    def read(self, offset: int, size: int) -> int:
+        return self.framebuffer.read_pixels(offset, size)
+
+    def write(self, offset: int, size: int, value: int) -> None:
+        self.framebuffer.write_pixels(offset, size, value)
+
+
+class FramebufferDevice(MmioDevice):
+    """A simple XRGB8888 framebuffer with a register window and pixel aperture."""
+
+    def __init__(
+        self,
+        width: int = 640,
+        height: int = 480,
+        *,
+        pixel_base: int = SVM_MMIO_FRAMEBUFFER0_PIXELS_BASE,
+        format: int = SVM_FB_FORMAT_XRGB8888,
+        pixels: Optional[Union[bytes, bytearray, memoryview]] = None,
+    ) -> None:
+        super().__init__()
+        if width <= 0 or height <= 0:
+            raise ValueError("framebuffer dimensions must be positive")
+        self.width = int(width)
+        self.height = int(height)
+        self.format = int(format)
+        self.stride = self.width * 4
+        self.pixel_base = int(pixel_base)
+        pixel_size = self.stride * self.height
+        if pixels is None:
+            self.pixels = bytearray(pixel_size)
+        else:
+            self.pixels = bytearray(pixels)
+            if len(self.pixels) != pixel_size:
+                raise ValueError("initial framebuffer bytes do not match dimensions")
+        self.dirty_seq = 0
+        self.dirty_ranges: List[Tuple[int, int]] = []
+        self.flush_count = 0
+        self.pixel_device = FramebufferPixelDevice(self)
+
+    @property
+    def pixel_size(self) -> int:
+        return len(self.pixels)
+
+    def read(self, offset: int, size: int) -> int:
+        if offset == FB_REG_WIDTH:
+            return self.width
+        if offset == FB_REG_HEIGHT:
+            return self.height
+        if offset == FB_REG_STRIDE:
+            return self.stride
+        if offset == FB_REG_FORMAT:
+            return self.format
+        if offset == FB_REG_PIXEL_BASE:
+            return self.pixel_base
+        if offset == FB_REG_PIXEL_SIZE:
+            return self.pixel_size
+        if offset == FB_REG_DIRTY_SEQ:
+            return self.dirty_seq
+        return 0
+
+    def write(self, offset: int, size: int, value: int) -> None:
+        if offset == FB_REG_FLUSH:
+            self.flush()
+
+    def read_pixels(self, offset: int, size: int) -> int:
+        if offset < 0 or offset + size > len(self.pixels):
+            raise IndexError("framebuffer pixel read out of range")
+        return int.from_bytes(self.pixels[offset : offset + size], "little")
+
+    def write_pixels(self, offset: int, size: int, value: int) -> None:
+        if offset < 0 or offset + size > len(self.pixels):
+            raise IndexError("framebuffer pixel write out of range")
+        self.pixels[offset : offset + size] = (value & _mask_for_size(size)).to_bytes(
+            size, "little"
+        )
+        self.dirty_seq = (self.dirty_seq + 1) & U64_MASK
+        self.dirty_ranges.append((offset, offset + size))
+
+    def flush(self) -> None:
+        self.flush_count += 1
+        self.dirty_ranges.clear()
+
+    def snapshot(self) -> bytes:
+        return bytes(self.pixels)
+
+
 class HostBlockImage:
     """Persistent host file used as a virtio-blk backing image."""
 
@@ -810,6 +917,7 @@ class MmioMachine:
     rtc: RtcDevice
     block: Optional[VirtioBlockDevice]
     net: Optional[VirtioNetDevice]
+    framebuffer: Optional[FramebufferDevice] = None
 
     def attach_to_vm(self, vm: object) -> "MmioMachine":
         vm.attach_mmio_bus(self.bus)
@@ -823,6 +931,9 @@ def build_default_mmio_machine(
     uart_output: Optional[object] = None,
     uart_input: Union[bytes, bytearray, memoryview] = b"",
     rtc_ns: Optional[Callable[[], int]] = None,
+    framebuffer: bool = False,
+    framebuffer_width: int = 640,
+    framebuffer_height: int = 480,
 ) -> MmioMachine:
     ic = MmioInterruptController()
     bus = MmioBus()
@@ -843,6 +954,11 @@ def build_default_mmio_machine(
         if net_backend is not None
         else None
     )
+    fb = (
+        FramebufferDevice(framebuffer_width, framebuffer_height)
+        if framebuffer
+        else None
+    )
 
     bus.add_region(SVM_MMIO_IC_BASE, SVM_MMIO_WINDOW_SIZE, ic, "interrupt-controller")
     bus.add_region(SVM_MMIO_UART0_BASE, SVM_MMIO_WINDOW_SIZE, uart, "uart0")
@@ -851,4 +967,17 @@ def build_default_mmio_machine(
         bus.add_region(SVM_MMIO_VIRTIO_BLK0_BASE, SVM_MMIO_WINDOW_SIZE, block, "virtio-blk0")
     if net is not None:
         bus.add_region(SVM_MMIO_VIRTIO_NET0_BASE, SVM_MMIO_WINDOW_SIZE, net, "virtio-net0")
-    return MmioMachine(bus, ic, uart, rtc, block, net)
+    if fb is not None:
+        bus.add_region(
+            SVM_MMIO_FRAMEBUFFER0_BASE,
+            SVM_MMIO_WINDOW_SIZE,
+            fb,
+            "framebuffer0",
+        )
+        bus.add_region(
+            fb.pixel_base,
+            fb.pixel_size,
+            fb.pixel_device,
+            "framebuffer0-pixels",
+        )
+    return MmioMachine(bus, ic, uart, rtc, block, net, fb)

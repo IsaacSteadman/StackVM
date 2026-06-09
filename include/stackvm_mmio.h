@@ -19,6 +19,8 @@
 #define SVM_MMIO_RTC_BASE (SVM_MMIO_BASE + 0x2000ULL)
 #define SVM_MMIO_VIRTIO_BLK0_BASE (SVM_MMIO_BASE + 0x3000ULL)
 #define SVM_MMIO_VIRTIO_NET0_BASE (SVM_MMIO_BASE + 0x4000ULL)
+#define SVM_MMIO_FRAMEBUFFER0_BASE (SVM_MMIO_BASE + 0x5000ULL)
+#define SVM_MMIO_FRAMEBUFFER0_PIXELS_BASE (SVM_MMIO_BASE + 0x100000ULL)
 
 #define SVM_IRQ_UART0 1u
 #define SVM_IRQ_VIRTIO_BLK0 2u
@@ -48,6 +50,18 @@
 /* RTC registers. */
 #define SVM_RTC_NOW_NS 0x00u
 #define SVM_RTC_NOW_SEC 0x08u
+
+/* Simple framebuffer registers. */
+#define SVM_FB_WIDTH 0x00u
+#define SVM_FB_HEIGHT 0x08u
+#define SVM_FB_STRIDE 0x10u
+#define SVM_FB_FORMAT 0x18u
+#define SVM_FB_PIXEL_BASE 0x20u
+#define SVM_FB_PIXEL_SIZE 0x28u
+#define SVM_FB_DIRTY_SEQ 0x30u
+#define SVM_FB_FLUSH 0x38u
+
+#define SVM_FB_FORMAT_XRGB8888 1u
 
 /* Compact virtio-MMIO transport registers. */
 #define SVM_VIRTIO_MAGIC 0x00u

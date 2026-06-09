@@ -305,6 +305,8 @@ Default device windows are 4 KiB each:
 | `0xFFFF2000` | RTC |
 | `0xFFFF3000` | virtio-blk0 |
 | `0xFFFF4000` | virtio-net0 |
+| `0xFFFF5000` | framebuffer0 control registers |
+| `0x1000F0000` | framebuffer0 XRGB8888 pixel aperture |
 
 The interrupt controller exposes pending, enable, claim, EOI, per-IRQ route,
 and per-IRQ priority registers. Enabled pending device IRQs are routed into the
@@ -314,4 +316,7 @@ UART RX, virtio-blk completion, and virtio-net TX/RX completion all raise MMIO
 IRQ lines. The UART provides byte TX/RX plus RX-ready IRQs; the RTC provides
 nanoseconds/seconds reads; virtio-blk uses a host-backed persistent disk image;
 virtio-net uses a host packet backend suitable for deterministic user-net tests
-and future tap integration.
+and future tap integration; framebuffer0 provides read-only mode registers, a
+dirty-sequence/flush register pair, and a guest-writable XRGB8888 scanout
+aperture used by UEFI Graphics Output Protocol and the devicetree
+`simple-framebuffer` binding.

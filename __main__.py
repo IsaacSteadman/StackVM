@@ -5,6 +5,7 @@ Invocable as::
 
     python -m IsaacCompiler.StackVM run   program.sbc [-- argv...]
     python -m IsaacCompiler.StackVM disassemble program.sbc [-o out.sasm]
+    python -m IsaacCompiler.StackVM uefi  app.efi [--cmdline ...]
 
 run
 ---
@@ -32,6 +33,10 @@ Disassemble a .sbc binary to human-readable StackVM assembly.
   options:
     -o / --output    output file (default: stdout)
     --addresses      include byte-offset addresses
+
+uefi
+----
+Launch a PE32+ EFI application through the minimal StackVM UEFI firmware.
 """
 
 from __future__ import annotations
@@ -219,6 +224,79 @@ _boot_parser.add_argument(
     help="syscall/device sets to enable: os, pygame, paravirt, all, none (default: none)",
 )
 
+# ---------------------------------------------------------------------------
+# 'uefi' subcommand
+# ---------------------------------------------------------------------------
+_uefi_parser = _subparsers.add_parser(
+    "uefi",
+    help="launch a PE32+ EFI application through the minimal UEFI firmware",
+)
+_uefi_parser.add_argument(
+    "input",
+    metavar="input",
+    help="PE32+ StackVM EFI image (.efi) to load",
+)
+_uefi_parser.add_argument(
+    "--vm-size",
+    metavar="N",
+    type=int,
+    default=1 << 20,
+    dest="vm_size",
+    help="total StackVM physical memory in bytes (default: 1 MiB)",
+)
+_uefi_parser.add_argument(
+    "--app-base",
+    metavar="ADDR",
+    type=lambda s: int(s, 0),
+    default=0x1000,
+    dest="app_base",
+    help="page-aligned physical EFI image load address (default: 0x1000)",
+)
+_uefi_parser.add_argument(
+    "--cmdline",
+    metavar="STR",
+    default="",
+    help="load-options / kernel command line string",
+)
+_uefi_parser.add_argument(
+    "--initramfs",
+    metavar="FILE",
+    default=None,
+    help="initramfs image to place in memory and describe in the DTB",
+)
+_uefi_parser.add_argument(
+    "--dtb",
+    metavar="FILE",
+    default=None,
+    help="explicit devicetree blob to publish in the UEFI configuration table",
+)
+_uefi_parser.add_argument(
+    "--nvram",
+    metavar="FILE",
+    default=None,
+    help="host JSON file used for persistent UEFI variables",
+)
+_uefi_parser.add_argument(
+    "--block-image",
+    metavar="FILE",
+    default=None,
+    dest="block_image",
+    help="host file used as the virtio-blk / Simple File System backing image",
+)
+_uefi_parser.add_argument(
+    "--block-size",
+    metavar="N",
+    type=int,
+    default=None,
+    dest="block_size",
+    help="create/extend --block-image to at least this many bytes",
+)
+_uefi_parser.add_argument(
+    "--prepare-only",
+    action="store_true",
+    help="build firmware tables and print launch state without entering the EFI app",
+)
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -273,6 +351,58 @@ def _main() -> None:
         except (ValueError, NotImplementedError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
+
+    elif args.subcommand == "uefi":
+        try:
+            with open(args.input, "rb") as fl:
+                app_image = fl.read()
+            initramfs = b""
+            if args.initramfs:
+                with open(args.initramfs, "rb") as fl:
+                    initramfs = fl.read()
+            dtb = b""
+            if args.dtb:
+                with open(args.dtb, "rb") as fl:
+                    dtb = fl.read()
+        except OSError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+        from .mmio import HostBlockImage
+        from .uefi import MinimalUefiFirmware
+
+        block_backend = (
+            HostBlockImage(args.block_image, size=args.block_size)
+            if args.block_image
+            else None
+        )
+        firmware = MinimalUefiFirmware(
+            vm_size=args.vm_size,
+            app_base=args.app_base,
+            cmdline=args.cmdline,
+            initramfs=initramfs,
+            dtb=dtb,
+            generate_dtb=not bool(dtb),
+            nvram_path=args.nvram,
+            block_backend=block_backend,
+        )
+        try:
+            launch = firmware.load_efi_app(app_image, execute=not args.prepare_only)
+        except (ValueError, MemoryError, OSError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+        print(f"UEFI image: {args.input}")
+        print(
+            f"  app_base     = {launch.app_base:#010x}\n"
+            f"  entry        = {launch.entry_addr:#010x}\n"
+            f"  image_handle = {launch.image_handle:#010x}\n"
+            f"  system_table = {launch.system_table_addr:#010x}\n"
+            f"  dtb          = {launch.dtb_addr:#010x}\n"
+            f"  status       = {'prepared' if args.prepare_only else 'returned/halted'}"
+        )
+        if isinstance(firmware.console_output, bytearray) and firmware.console_output:
+            sys.stdout.buffer.write(firmware.console_output)
 
     elif args.subcommand == "run":
         program_args: list[str] = args.program_args

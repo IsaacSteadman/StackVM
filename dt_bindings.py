@@ -26,11 +26,13 @@ Bindings overview (see the HTML doc for the normative text)::
             rtc@ffff2000    { stackvm,rtc;   interrupts=<3> }
             virtio@ffff3000 { virtio,mmio;   interrupts=<2> }  (block)
             virtio@ffff4000 { virtio,mmio;   interrupts=<4> }  (net)
+            framebuffer@1000f0000 { simple-framebuffer; width/height/stride/format }
         }
     };
 
-Addresses span the full 64-bit physical space (MMIO lives at 0xFFFF0000+), so
-the root and ``/soc`` use ``#address-cells = <2>`` / ``#size-cells = <2>``.
+Addresses span the full 64-bit physical space (MMIO lives at 0xFFFF0000+ and
+the framebuffer aperture can sit above 4 GiB), so the root and ``/soc`` use
+``#address-cells = <2>`` / ``#size-cells = <2>``.
 """
 
 from __future__ import annotations
@@ -44,6 +46,9 @@ from .mmio import (
     SVM_IRQ_UART0,
     SVM_IRQ_VIRTIO_BLK0,
     SVM_IRQ_VIRTIO_NET0,
+    SVM_FB_FORMAT_XRGB8888,
+    SVM_MMIO_FRAMEBUFFER0_BASE,
+    SVM_MMIO_FRAMEBUFFER0_PIXELS_BASE,
     SVM_MMIO_IC_BASE,
     SVM_MMIO_RTC_BASE,
     SVM_MMIO_UART0_BASE,
@@ -68,7 +73,7 @@ COMPAT_INTC = "stackvm,intc"  # MMIO interrupt controller (D5)
 COMPAT_UART = "stackvm,uart"  # MMIO serial console (D5)
 COMPAT_RTC = "stackvm,rtc"  # MMIO real-time clock (D5)
 COMPAT_VIRTIO_MMIO = "virtio,mmio"  # virtio-blk / virtio-net transport (D5)
-COMPAT_FRAMEBUFFER = "simple-framebuffer"  # reserved for D1b.3 (not yet a device)
+COMPAT_FRAMEBUFFER = "simple-framebuffer"
 COMPAT_SIMPLE_BUS = "simple-bus"
 
 # The single interrupt controller gets a fixed phandle so device nodes can name
@@ -105,6 +110,44 @@ class DtDevice:
 def _hex_unit(base: int) -> str:
     """Devicetree unit address: lowercase hex, no ``0x`` prefix."""
     return "%x" % base
+
+
+def _reg_cells(base: int, size: int) -> bytes:
+    """A ``reg`` entry under #address-cells=2 / #size-cells=2."""
+    return encode_u64(base) + encode_u64(size)
+
+
+def framebuffer_dt_device(
+    *,
+    width: int = 640,
+    height: int = 480,
+    stride: Optional[int] = None,
+    pixel_base: int = SVM_MMIO_FRAMEBUFFER0_PIXELS_BASE,
+    format: str = "a8r8g8b8",
+) -> DtDevice:
+    """Return the standard simple-framebuffer node for the D1b.3 device."""
+    if width <= 0 or height <= 0:
+        raise ValueError("framebuffer dimensions must be positive")
+    if stride is None:
+        stride = width * 4
+    pixel_size = stride * height
+    return DtDevice(
+        "framebuffer@" + _hex_unit(pixel_base),
+        (COMPAT_FRAMEBUFFER,),
+        pixel_base,
+        pixel_size,
+        extra_props={
+            "width": int(width).to_bytes(4, "big"),
+            "height": int(height).to_bytes(4, "big"),
+            "stride": int(stride).to_bytes(4, "big"),
+            "format": format.encode("ascii") + b"\0",
+            "stackvm,mmio-control": _reg_cells(
+                SVM_MMIO_FRAMEBUFFER0_BASE,
+                SVM_MMIO_WINDOW_SIZE,
+            ),
+            "stackvm,pixel-format-id": int(SVM_FB_FORMAT_XRGB8888).to_bytes(4, "big"),
+        },
+    )
 
 
 def default_soc_devices() -> List[DtDevice]:
@@ -146,12 +189,8 @@ def default_soc_devices() -> List[DtDevice]:
             win,
             interrupts=(SVM_IRQ_VIRTIO_NET0,),
         ),
+        framebuffer_dt_device(),
     ]
-
-
-def _reg_cells(base: int, size: int) -> bytes:
-    """A ``reg`` entry under #address-cells=2 / #size-cells=2."""
-    return encode_u64(base) + encode_u64(size)
 
 
 # ---------------------------------------------------------------------------
