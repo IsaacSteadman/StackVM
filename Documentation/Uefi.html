@@ -340,6 +340,78 @@
       <a href="#exitbs">ExitBootServices</a>.
     </p>
 
+    <h2 id="dispatch">In-VM service dispatch (firmware trap)</h2>
+    <p>
+      The firmware's service-table entries (<code>EFI_BOOT_SERVICES</code>,
+      <code>EFI_RUNTIME_SERVICES</code>, and the protocol interfaces) hold
+      <em>synthetic</em> function pointers that lie <strong>outside</strong>
+      physical RAM. When a running EFI image executes a <code>CALL</code> to one
+      of them, the firmware run loop
+      (<code>MinimalUefiFirmware.run()</code> in <code>StackVM/uefi.py</code>)
+      sees <code>ip</code> land on a registered service pointer and traps the
+      call instead of fetching bytecode there. This is how a real in-VM EFI
+      image (not just the host test harness) reaches firmware services.
+    </p>
+    <p>
+      At the trap, the EFIAPI frame the guest's <code>CALL</code> just built is
+      <code>bp == sp</code> pointing at the saved return <code>ip</code>:
+    </p>
+    <pre>[bp+0]  return ip        [bp+8]  saved bp
+[bp+16] arg0, arg1, ...   [bp+16 + 8*arity] caller-reserved EFI_STATUS slot</pre>
+    <p>
+      The firmware reads <code>arity</code> 8-byte argument slots (each service's
+      argument count is tabulated, protocol methods counting their leading
+      <code>This</code>), marshals pointer parameters to/from guest memory,
+      writes the <code>EFI_STATUS</code> into the caller-reserved return slot, and
+      performs the callee <code>RET</code> (restoring <code>ip</code>/<code>bp</code>/<code>sp</code>);
+      the caller then <code>RST_SP</code>s the argument area, exactly as the
+      <a href="#efiapi">caller-cleanup convention</a> specifies. Services that
+      transfer control rather than return (<code>StartImage</code> chain-load,
+      <code>Exit</code>/<code>ResetSystem</code>) redirect the VM and skip the
+      return/unwind.
+    </p>
+
+    <h2 id="standardized">Standardized bootloaders (D1b.5)</h2>
+    <p>
+      With the firmware + in-VM dispatch in place, StackVM supports the two
+      standardized hand-offs that let largely <em>unmodified</em> third-party
+      bootloaders and kernels run:
+    </p>
+    <ul>
+      <li><strong>Linux EFI-stub.</strong> A kernel built as a PE32+ EFI
+        application (subsystem <code>EFI_APPLICATION</code>) is loaded and entered
+        at <code>efi_main</code> like any EFI app. Its stub calls
+        <code>GetMemoryMap()</code>, records the <code>MapKey</code>, calls
+        <code>ExitBootServices(ImageHandle, MapKey)</code>, and continues into the
+        kernel proper — obtaining memory + cmdline + initrd through boot services
+        and the DTB configuration table rather than reading
+        <code>StartupData</code> directly. Launch it with
+        <code>uefi.run_uefi_app()</code> or
+        <code>python -m IsaacCompiler.StackVM uefi kernel.efi</code>.</li>
+      <li><strong>GRUB-style chain-load.</strong> An EFI bootloader (e.g.
+        <code>grub.efi</code>) calls
+        <code>LoadImage(BootPolicy, ParentImageHandle, DevicePath, SourceBuffer,
+        SourceSize, &amp;ImageHandle)</code> — from a <code>SourceBuffer</code> it
+        staged, or with no source to load the firmware's default boot image — then
+        <code>StartImage(ImageHandle, …)</code> to transfer control to the loaded
+        kernel. Chain-load does not return to the bootloader.</li>
+      <li><strong>Multiboot2.</strong> The format stock GRUB hands off to is
+        supported directly (without UEFI underneath) in
+        <code>StackVM/multiboot2.py</code>: the bootloader parses the kernel's
+        Multiboot2 header, builds the Multiboot2 information (MBI) structure
+        (memory map, command line, modules, framebuffer, EFI tables), and enters
+        the kernel with the Multiboot2 <em>bootloader magic</em>
+        <code>0x36D76289</code>. StackVM has no general-purpose registers, so the
+        x86 <code>eax = magic; ebx = mbi</code> convention is mapped onto the
+        native handoff: the magic and the MBI physical address are delivered both
+        on the stack as <code>kmain(magic, mbi)</code> (magic at <code>sp</code>,
+        mbi at <code>sp+8</code>) and in the read-only interrupt-argument
+        registers <code>SVSR_INT_ARG0</code> / <code>SVSR_INT_ARG1</code>. Launch
+        it with <code>multiboot2.boot_multiboot2()</code> or
+        <code>python -m IsaacCompiler.StackVM multiboot2 kernel.bin
+        --module initrd</code>.</li>
+    </ul>
+
     <h2 id="firmware">Where the firmware lives</h2>
     <p>
       This page is the ABI contract, and the Python reference firmware now
@@ -361,6 +433,13 @@
         <code>efi_main(ImageHandle, SystemTable)</code>; it publishes the DTB
         configuration table (pairing with <strong>D1a</strong>, skipping
         ACPI/AML).</li>
+      <li><strong>D1b.5</strong> — standardized bootloaders on top (DONE in the
+        Python reference): the <a href="#dispatch">in-VM EFIAPI service trap</a>
+        that lets a real EFI image call firmware services, the Linux EFI-stub
+        hand-off (<code>GetMemoryMap</code>/<code>ExitBootServices</code>), the
+        GRUB-style <code>LoadImage</code>/<code>StartImage</code> chain-load, and
+        the <a href="#standardized">Multiboot2</a> protocol
+        (<code>StackVM/multiboot2.py</code>).</li>
     </ul>
   </body>
 </html>

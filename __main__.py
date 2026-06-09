@@ -5,7 +5,9 @@ Invocable as::
 
     python -m IsaacCompiler.StackVM run   program.sbc [-- argv...]
     python -m IsaacCompiler.StackVM disassemble program.sbc [-o out.sasm]
+    python -m IsaacCompiler.StackVM boot  vmlinux.bin [--cmdline ...]
     python -m IsaacCompiler.StackVM uefi  app.efi [--cmdline ...]
+    python -m IsaacCompiler.StackVM multiboot2 kernel.bin [--module initrd ...]
 
 run
 ---
@@ -297,6 +299,54 @@ _uefi_parser.add_argument(
     help="build firmware tables and print launch state without entering the EFI app",
 )
 
+# ---------------------------------------------------------------------------
+# 'multiboot2' subcommand
+# ---------------------------------------------------------------------------
+_mb2_parser = _subparsers.add_parser(
+    "multiboot2",
+    help="boot a Multiboot2 kernel image (GRUB-style handoff)",
+)
+_mb2_parser.add_argument(
+    "input",
+    metavar="input",
+    help="Multiboot2 kernel image (carrying a Multiboot2 header)",
+)
+_mb2_parser.add_argument(
+    "--vm-size",
+    metavar="N",
+    type=int,
+    default=1 << 20,
+    dest="vm_size",
+    help="total StackVM physical memory in bytes (default: 1 MiB)",
+)
+_mb2_parser.add_argument(
+    "--load-base",
+    metavar="ADDR",
+    type=lambda s: int(s, 0),
+    default=0x100000,
+    dest="load_base",
+    help="page-aligned physical load address (default: 0x100000)",
+)
+_mb2_parser.add_argument(
+    "--cmdline",
+    metavar="STR",
+    default="",
+    help="kernel command line string",
+)
+_mb2_parser.add_argument(
+    "--module",
+    metavar="FILE[:STR]",
+    action="append",
+    default=[],
+    dest="modules",
+    help="a boot module (e.g. initramfs); repeatable, optional :string suffix",
+)
+_mb2_parser.add_argument(
+    "--debug",
+    action="store_true",
+    help="launch the interactive debugger instead of running to completion",
+)
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -351,6 +401,52 @@ def _main() -> None:
         except (ValueError, NotImplementedError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
+
+    elif args.subcommand == "multiboot2":
+        try:
+            with open(args.input, "rb") as fl:
+                kernel_image = fl.read()
+            modules = []
+            for spec in args.modules:
+                path, _, string = spec.partition(":")
+                with open(path, "rb") as fl:
+                    modules.append((fl.read(), string))
+        except OSError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+        from .multiboot2 import boot_multiboot2
+
+        print(f"Booting Multiboot2 kernel: {args.input}")
+        print(
+            f"  load_base = {args.load_base:#010x}\n"
+            f"  vm_size   = {args.vm_size:#010x}\n"
+            f"  cmdline   = {args.cmdline!r}\n"
+            f"  modules   = {len(modules)}"
+        )
+        try:
+            vm, image = boot_multiboot2(
+                kernel_image,
+                vm_size=args.vm_size,
+                load_base=args.load_base,
+                cmdline=args.cmdline,
+                modules=modules,
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        print(f"  entry     = {image.entry:#010x}\n  mbi       = {image.mbi_base:#010x}")
+        if args.debug:
+            from .runner import _load_debugger
+
+            Debugger = _load_debugger()
+            if Debugger is None:
+                print("Warning: Debugger unavailable; running to completion.")
+                vm.execute()
+            else:
+                Debugger(vm, image.load_base, image.kernel_end, {}).debug()
+        else:
+            vm.execute()
 
     elif args.subcommand == "uefi":
         try:

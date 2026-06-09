@@ -102,10 +102,27 @@ EVT_TIMER = 0x80000000
 EVT_RUNTIME = 0x40000000
 EVT_NOTIFY_WAIT = 0x00000100
 EVT_NOTIFY_SIGNAL = 0x00000200
+EVT_SIGNAL_EXIT_BOOT_SERVICES = 0x00000201
 
 TIMER_CANCEL = 0
 TIMER_PERIODIC = 1
 TIMER_RELATIVE = 2
+
+# Task Priority Levels (mapped onto the D2 interrupt priority mask, see Uefi.html).
+TPL_APPLICATION = 4
+TPL_CALLBACK = 8
+TPL_NOTIFY = 16
+TPL_HIGH_LEVEL = 31
+
+# Memory types used by AllocateXxx and the firmware page allocator.
+ALLOCATE_ANY_PAGES = 0
+ALLOCATE_MAX_ADDRESS = 1
+ALLOCATE_ADDRESS = 2
+
+# Sentinel returned by an in-VM service marshaller to signal that it has already
+# redirected control (e.g. chain-load via StartImage, or stopped the VM via
+# Exit/ResetSystem) and the generic trap must *not* write a return slot or unwind.
+_NO_RETURN = object()
 
 EFI_SIMPLE_TEXT_INPUT_PROTOCOL_GUID = uuid.UUID(
     "387477c1-69c7-11d2-8e39-00a0c969723b"
@@ -190,6 +207,86 @@ _RUNTIME_SERVICE_NAMES = [
     "QueryVariableInfo",
 ]
 
+# EFIAPI argument counts (excluding the caller-allocated return slot) for every
+# service, used by the in-VM service trap to read the right number of 8-byte
+# argument slots and to locate the return slot at bp + 16 + 8*arity.  Protocol
+# methods count their leading ``This`` pointer.  Kept exhaustive so an in-VM call
+# to any table member unwinds correctly even when the marshaller is a stub.
+_BOOT_SERVICE_ARITY = {
+    "RaiseTPL": 1,
+    "RestoreTPL": 1,
+    "AllocatePages": 4,
+    "FreePages": 2,
+    "GetMemoryMap": 5,
+    "AllocatePool": 3,
+    "FreePool": 1,
+    "CreateEvent": 5,
+    "SetTimer": 3,
+    "WaitForEvent": 3,
+    "SignalEvent": 1,
+    "CloseEvent": 1,
+    "CheckEvent": 1,
+    "InstallProtocolInterface": 4,
+    "ReinstallProtocolInterface": 4,
+    "UninstallProtocolInterface": 3,
+    "HandleProtocol": 3,
+    "Reserved": 0,
+    "RegisterProtocolNotify": 3,
+    "LocateHandle": 5,
+    "LocateDevicePath": 3,
+    "InstallConfigurationTable": 2,
+    "LoadImage": 6,
+    "StartImage": 3,
+    "Exit": 4,
+    "UnloadImage": 1,
+    "ExitBootServices": 2,
+    "GetNextMonotonicCount": 1,
+    "Stall": 1,
+    "SetWatchdogTimer": 4,
+    "ConnectController": 4,
+    "DisconnectController": 3,
+    "OpenProtocol": 6,
+    "CloseProtocol": 4,
+    "OpenProtocolInformation": 4,
+    "ProtocolsPerHandle": 3,
+    "LocateHandleBuffer": 5,
+    "LocateProtocol": 3,
+    "InstallMultipleProtocolInterfaces": 2,
+    "UninstallMultipleProtocolInterfaces": 2,
+    "CalculateCrc32": 3,
+    "CopyMem": 3,
+    "SetMem": 3,
+    "CreateEventEx": 6,
+}
+
+_RUNTIME_SERVICE_ARITY = {
+    "GetTime": 2,
+    "SetTime": 1,
+    "GetWakeupTime": 3,
+    "SetWakeupTime": 2,
+    "SetVirtualAddressMap": 4,
+    "ConvertPointer": 2,
+    "GetVariable": 5,
+    "GetNextVariableName": 3,
+    "SetVariable": 5,
+    "GetNextHighMonotonicCount": 1,
+    "ResetSystem": 4,
+    "UpdateCapsule": 3,
+    "QueryCapsuleCapabilities": 4,
+    "QueryVariableInfo": 4,
+}
+
+
+@dataclass
+class LoadedEfiImage:
+    """A PE32+ image loaded by ``LoadImage`` (firmware boot service)."""
+
+    handle: int
+    base: int
+    size: int
+    entry: int
+    started: bool = False
+
 
 def _align_up(value: int, align: int) -> int:
     return (value + align - 1) & ~(align - 1)
@@ -232,6 +329,20 @@ def _read_cstr(memory: bytearray, addr: int) -> bytes:
     while end < len(memory) and memory[end]:
         end += 1
     return bytes(memory[addr:end])
+
+
+def _read_char16(memory: bytearray, addr: int, max_chars: int = 4096) -> str:
+    """Read a NUL-terminated CHAR16 (UTF-16LE) string out of guest memory."""
+    out = bytearray()
+    end = addr
+    limit = addr + max_chars * 2
+    while end + 1 < len(memory) and end < limit:
+        unit = memory[end] | (memory[end + 1] << 8)
+        if unit == 0:
+            break
+        out += memory[end : end + 2]
+        end += 2
+    return bytes(out).decode("utf-16-le", "replace")
 
 
 def _entry_offset_from_pe(data: bytes) -> int:
@@ -578,6 +689,7 @@ class MinimalUefiFirmware:
         rtc_ns: Optional[Callable[[], int]] = None,
         framebuffer_width: int = 640,
         framebuffer_height: int = 480,
+        boot_image_payload: Union[bytes, bytearray] = b"",
     ) -> None:
         self.vm_size = vm_size
         self.app_base = app_base
@@ -586,6 +698,9 @@ class MinimalUefiFirmware:
         self.explicit_dtb = dtb
         self.generate_dtb = generate_dtb
         self.core_count = core_count
+        # The default boot image on the "device" (what LoadImage returns when an
+        # EFI bootloader asks for the boot image with no SourceBuffer).
+        self.boot_image_payload = bytes(boot_image_payload)
         self.console_output = bytearray() if console_output is None else console_output
         self.rtc_ns = time.time_ns if rtc_ns is None else rtc_ns
         self.block_backend = block_backend
@@ -621,9 +736,16 @@ class MinimalUefiFirmware:
         self.protocol_objects: Dict[Tuple[int, uuid.UUID], object] = {}
         self.service_pointers: Dict[str, int] = {}
         self.service_dispatch: Dict[int, Callable] = {}
+        # In-VM EFIAPI dispatch: service pointer -> (arity, marshaller(vm, args)).
+        self._vm_marshallers: Dict[int, Tuple[int, Callable]] = {}
         self.events: Dict[int, UefiEvent] = {}
         self.boot_services_active = True
         self.map_key = 1
+        self.tpl = TPL_APPLICATION
+        self.exited = False
+        self.exit_status: Optional[int] = None
+        self._monotonic = 0
+        self.loaded_images: Dict[int, LoadedEfiImage] = {}
         self._allocations: Dict[int, Tuple[int, int]] = {}
         self._free_ranges: List[List[int]] = []
         self._current_time_100ns = 0
@@ -633,13 +755,24 @@ class MinimalUefiFirmware:
     # Service pointer registry and protocol DB
     # ------------------------------------------------------------------
 
-    def _service_pointer(self, name: str, fn: Optional[Callable] = None) -> int:
+    def _service_pointer(
+        self,
+        name: str,
+        fn: Optional[Callable] = None,
+        *,
+        arity: int = 0,
+        marshaller: Optional[Callable] = None,
+    ) -> int:
         if name in self.service_pointers:
             return self.service_pointers[name]
         ptr = self._next_service_ptr
         self._next_service_ptr += 0x10
         self.service_pointers[name] = ptr
         self.service_dispatch[ptr] = fn or self._unsupported_service
+        # Every table member is registered so an in-VM call to it is recognised
+        # as a firmware trap rather than executed as bytecode at 0xFFF...; ones
+        # without a real marshaller fall back to EFI_UNSUPPORTED but still unwind.
+        self._vm_marshallers[ptr] = (arity, marshaller or self._efi_default)
         return ptr
 
     def call_service(self, pointer: int, *args):
@@ -649,6 +782,306 @@ class MinimalUefiFirmware:
 
     def _unsupported_service(self, *args):
         return EFI_UNSUPPORTED
+
+    # ------------------------------------------------------------------
+    # In-VM EFIAPI service dispatch (firmware run loop + trap)
+    # ------------------------------------------------------------------
+
+    def run(self, *, max_steps: int = 5_000_000, interrupts: bool = False) -> int:
+        """Execute the loaded EFI image, trapping in-VM calls to firmware service
+        pointers and dispatching them through the EFIAPI marshallers.
+
+        The firmware service tables hold synthetic pointers outside RAM; whenever
+        the VM's ``ip`` lands on one, the call is serviced by the firmware instead
+        of fetched as bytecode.  Returns the number of dispatch steps executed.
+        """
+        vm = self.vm
+        if vm is None:
+            raise RuntimeError("no EFI image loaded; call load_efi_app() first")
+        saved_apic, saved_timer = vm.apic, vm.timer
+        if not interrupts:
+            # Keep the loop deterministic: no async timer/APIC delivery (the EFI
+            # event/timer model is driven explicitly via advance_time_100ns).
+            vm.apic = None
+            vm.timer = None
+        try:
+            steps = 0
+            while vm.running and steps < max_steps:
+                marshaller = self._vm_marshallers.get(vm.ip)
+                if marshaller is not None:
+                    self._service_trap(vm.ip)
+                else:
+                    vm.step()
+                steps += 1
+            if vm.running and steps >= max_steps:
+                raise RuntimeError(
+                    "EFI image exceeded max_steps (%d) without halting" % max_steps
+                )
+            return steps
+        finally:
+            vm.apic, vm.timer = saved_apic, saved_timer
+
+    def _service_trap(self, ptr: int) -> None:
+        """Service one in-VM EFIAPI call landing on firmware service *ptr*.
+
+        On entry (immediately after the guest's ``CALL``) ``bp == sp`` points at
+        the saved return ip; the EFIAPI frame is::
+
+            [bp+0]  return ip      [bp+8]  saved bp
+            [bp+16] arg0 ...       [bp+16+8*arity] caller-reserved return slot
+        """
+        vm = self.vm
+        arity, marshaller = self._vm_marshallers[ptr]
+        bp = vm.bp
+        args = [vm.get(8, bp + 16 + 8 * i) for i in range(arity)]
+        result = marshaller(vm, args)
+        if result is _NO_RETURN:
+            # The marshaller redirected control (chain-load) or halted the VM.
+            return
+        status = EFI_SUCCESS if result is None else (result & U64_MASK)
+        vm.set(8, bp + 16 + 8 * arity, status)
+        vm.ret()
+
+    def _new_runtime_handle(self) -> int:
+        status, addr = self.allocate_pool(8)
+        if status != EFI_SUCCESS:
+            raise MemoryError("could not allocate firmware handle")
+        _write_u64(self.vm.memory, addr, 0)
+        self.protocols.setdefault(addr, {})
+        return addr
+
+    # ---- EFIAPI marshallers ------------------------------------------------
+    # Each takes (vm, args) where args are the 8-byte argument slots, reads/writes
+    # guest memory for pointer parameters, and returns the EFI_STATUS (or _NO_RETURN).
+
+    def _efi_default(self, vm, args):
+        return EFI_UNSUPPORTED
+
+    def _efi_noop_success(self, vm, args):
+        return EFI_SUCCESS
+
+    def _efi_output_string(self, vm, args):
+        text = _read_char16(vm.memory, args[1]) if args[1] else ""
+        return self.text_out.output_string(text)
+
+    def _efi_read_key_stroke(self, vm, args):
+        status, ch = self.text_in.read_key_stroke()
+        if status == EFI_SUCCESS and args[1]:
+            vm.set(2, args[1], 0)  # ScanCode
+            vm.set(2, args[1] + 2, ch or 0)  # UnicodeChar
+        return status
+
+    def _efi_get_memory_map(self, vm, args):
+        map_size_ptr, map_ptr, key_ptr, dsize_ptr, dver_ptr = args
+        buf_size = vm.get(8, map_size_ptr) if map_size_ptr else 0
+        status, required, key, dsize, dver, data = self.get_memory_map(buf_size)
+        if map_size_ptr:
+            vm.set(8, map_size_ptr, required)
+        if dsize_ptr:
+            vm.set(8, dsize_ptr, dsize)
+        if dver_ptr:
+            vm.set(4, dver_ptr, dver)
+        if key_ptr:
+            vm.set(8, key_ptr, key)
+        if status == EFI_SUCCESS and map_ptr and data:
+            vm.memory[map_ptr : map_ptr + len(data)] = data
+        return status
+
+    def _efi_exit_boot_services(self, vm, args):
+        status = self.exit_boot_services(args[0], args[1])
+        if status == EFI_SUCCESS:
+            # Boot-time timer event torn down; the OS owns the controller now.
+            self.tpl = TPL_APPLICATION
+        return status
+
+    def _efi_allocate_pages(self, vm, args):
+        _typ, memtype, pages, mem_ptr = args
+        status, addr = self.allocate_pages(pages, memtype)
+        if status == EFI_SUCCESS and mem_ptr:
+            vm.set(8, mem_ptr, addr)
+        return status
+
+    def _efi_free_pages(self, vm, args):
+        return self.free_pages(args[0], args[1])
+
+    def _efi_allocate_pool(self, vm, args):
+        _pooltype, size, buf_ptr = args
+        status, addr = self.allocate_pool(size)
+        if status == EFI_SUCCESS and buf_ptr:
+            vm.set(8, buf_ptr, addr)
+        return status
+
+    def _efi_free_pool(self, vm, args):
+        return self.free_pool(args[0])
+
+    def _efi_handle_protocol(self, vm, args):
+        handle, guid_ptr, iface_ptr = args
+        guid = unpack_guid(vm.memory[guid_ptr : guid_ptr + 16])
+        status, iface = self.handle_protocol(handle, guid)
+        if status == EFI_SUCCESS and iface_ptr:
+            vm.set(8, iface_ptr, iface)
+        return status
+
+    def _efi_locate_protocol(self, vm, args):
+        guid_ptr, _registration, iface_ptr = args
+        guid = unpack_guid(vm.memory[guid_ptr : guid_ptr + 16])
+        status, _handle, iface = self.locate_protocol(guid)
+        if status == EFI_SUCCESS and iface_ptr:
+            vm.set(8, iface_ptr, iface)
+        return status
+
+    def _efi_get_time(self, vm, args):
+        status, t = self.get_time()
+        time_ptr = args[0]
+        if status == EFI_SUCCESS and time_ptr:
+            struct.pack_into(
+                "<HBBBBBBIhBB",
+                vm.memory,
+                time_ptr,
+                t["year"],
+                t["month"],
+                t["day"],
+                t["hour"],
+                t["minute"],
+                t["second"],
+                0,
+                t["nanosecond"],
+                0,
+                0,
+                0,
+            )
+        return status
+
+    def _efi_stall(self, vm, args):
+        self.advance_time_100ns(int(args[0]) * 10)  # 1 us == 10 * 100ns
+        return EFI_SUCCESS
+
+    def _efi_copy_mem(self, vm, args):
+        dst, src, length = args
+        vm.memory[dst : dst + length] = bytes(vm.memory[src : src + length])
+        return EFI_SUCCESS
+
+    def _efi_set_mem(self, vm, args):
+        buf, size, value = args
+        vm.memory[buf : buf + size] = bytes([value & 0xFF]) * size
+        return EFI_SUCCESS
+
+    def _efi_raise_tpl(self, vm, args):
+        old = self.tpl
+        self.tpl = args[0]
+        return old  # RaiseTPL returns the previous TPL in the status slot
+
+    def _efi_restore_tpl(self, vm, args):
+        self.tpl = args[0]
+        return EFI_SUCCESS
+
+    def _efi_calculate_crc32(self, vm, args):
+        data_ptr, size, crc_ptr = args
+        if not data_ptr or not crc_ptr or size == 0:
+            return EFI_INVALID_PARAMETER
+        crc = zlib.crc32(bytes(vm.memory[data_ptr : data_ptr + size])) & 0xFFFFFFFF
+        vm.set(4, crc_ptr, crc)
+        return EFI_SUCCESS
+
+    def _efi_get_next_monotonic_count(self, vm, args):
+        self._monotonic += 1
+        if args[0]:
+            vm.set(8, args[0], self._monotonic)
+        return EFI_SUCCESS
+
+    def _efi_create_event(self, vm, args):
+        event_type, tpl, _notify_fn, context, event_ptr = args
+        # Guest notify callbacks are not invoked (they would be guest bytecode);
+        # the event is still created so SetTimer/CheckEvent/WaitForEvent work.
+        status, handle = self.create_event(event_type, tpl, None, context)
+        if status == EFI_SUCCESS and event_ptr:
+            vm.set(8, event_ptr, handle)
+        return status
+
+    def _efi_set_timer(self, vm, args):
+        return self.set_timer(args[0], args[1], args[2])
+
+    def _efi_signal_event(self, vm, args):
+        return self.signal_event(args[0])
+
+    def _efi_check_event(self, vm, args):
+        return self.check_event(args[0])
+
+    def _efi_close_event(self, vm, args):
+        return self.close_event(args[0])
+
+    def _efi_reset_system(self, vm, args):
+        self.exit_status = args[1]
+        self.exited = True
+        vm.running = 0
+        return _NO_RETURN
+
+    def _efi_exit(self, vm, args):
+        self.exit_status = args[1]
+        self.exited = True
+        vm.running = 0
+        return _NO_RETURN
+
+    def _efi_block_read(self, vm, args):
+        if self.block_io is None:
+            return EFI_UNSUPPORTED
+        _this, media_id, lba, buffer_size, buffer = args
+        status, data = self.block_io.read_blocks(media_id, lba, buffer_size)
+        if status == EFI_SUCCESS and buffer and data:
+            vm.memory[buffer : buffer + len(data)] = data
+        return status
+
+    def _efi_block_write(self, vm, args):
+        if self.block_io is None:
+            return EFI_UNSUPPORTED
+        _this, media_id, lba, buffer_size, buffer = args
+        data = bytes(vm.memory[buffer : buffer + buffer_size]) if buffer else b""
+        return self.block_io.write_blocks(media_id, lba, data)
+
+    def _efi_load_image(self, vm, args):
+        _policy, _parent, _devpath, src_buf, src_size, out_ptr = args
+        if src_buf and src_size:
+            pe_bytes = bytes(vm.memory[src_buf : src_buf + src_size])
+        elif self.boot_image_payload:
+            pe_bytes = self.boot_image_payload
+        else:
+            return EFI_NOT_FOUND
+        try:
+            executable = loads_pe_executable(pe_bytes)
+            entry_offset = _entry_offset_from_pe(pe_bytes)
+        except Exception:
+            return EFI_LOAD_ERROR
+        size = len(executable.memory)
+        pages = max(1, _align_up(size, EFI_PAGE_SIZE) // EFI_PAGE_SIZE)
+        status, base = self.allocate_pages(pages, EFI_LOADER_CODE)
+        if status != EFI_SUCCESS:
+            return EFI_OUT_OF_RESOURCES
+        app_memory = bytearray(executable.memory)
+        apply_base_fixups(app_memory, executable.base_relocations, base)
+        vm.memory[base : base + len(app_memory)] = app_memory
+        handle = self._new_runtime_handle()
+        self.loaded_images[handle] = LoadedEfiImage(handle, base, size, base + entry_offset)
+        if out_ptr:
+            vm.set(8, out_ptr, handle)
+        return EFI_SUCCESS
+
+    def _efi_start_image(self, vm, args):
+        handle = args[0]
+        record = self.loaded_images.get(handle)
+        if record is None:
+            return EFI_INVALID_PARAMETER
+        record.started = True
+        # Chain-load: hand control to the new image's efi_main with a fresh stack.
+        # The bootloader that called StartImage does not regain control (it has
+        # transferred ownership to the loaded kernel), matching GRUB chain-load.
+        self.image_handle = handle
+        vm.sp = self.vm_size
+        vm.bp = self.vm_size
+        vm.push(8, 0)
+        vm.push(8, self.system_table_addr)
+        vm.push(8, handle)
+        vm.ip = record.entry
+        return _NO_RETURN
 
     def _new_handle(self, alloc: _GuestAllocator, name: str) -> int:
         addr = alloc.alloc(8, 8)
@@ -1005,10 +1438,40 @@ class MinimalUefiFirmware:
             "ExitBootServices": self.exit_boot_services,
             "CalculateCrc32": lambda data: zlib.crc32(bytes(data)) & 0xFFFFFFFF,
         }
+        # In-VM EFIAPI marshallers (read stack args + guest memory, write outputs).
+        vm_marshallers = {
+            "RaiseTPL": self._efi_raise_tpl,
+            "RestoreTPL": self._efi_restore_tpl,
+            "AllocatePages": self._efi_allocate_pages,
+            "FreePages": self._efi_free_pages,
+            "GetMemoryMap": self._efi_get_memory_map,
+            "AllocatePool": self._efi_allocate_pool,
+            "FreePool": self._efi_free_pool,
+            "CreateEvent": self._efi_create_event,
+            "SetTimer": self._efi_set_timer,
+            "SignalEvent": self._efi_signal_event,
+            "CloseEvent": self._efi_close_event,
+            "CheckEvent": self._efi_check_event,
+            "HandleProtocol": self._efi_handle_protocol,
+            "InstallConfigurationTable": self._efi_noop_success,
+            "LoadImage": self._efi_load_image,
+            "StartImage": self._efi_start_image,
+            "Exit": self._efi_exit,
+            "ExitBootServices": self._efi_exit_boot_services,
+            "GetNextMonotonicCount": self._efi_get_next_monotonic_count,
+            "Stall": self._efi_stall,
+            "SetWatchdogTimer": self._efi_noop_success,
+            "LocateProtocol": self._efi_locate_protocol,
+            "CalculateCrc32": self._efi_calculate_crc32,
+            "CopyMem": self._efi_copy_mem,
+            "SetMem": self._efi_set_mem,
+        }
         for index, name in enumerate(_BOOT_SERVICE_NAMES):
             ptr = self._service_pointer(
                 "BootServices." + name,
                 service_impls.get(name),
+                arity=_BOOT_SERVICE_ARITY.get(name, 0),
+                marshaller=vm_marshallers.get(name),
             )
             _write_u64(alloc.memory, addr + EFI_TABLE_HEADER_SIZE + index * 8, ptr)
         self._finalize_table(alloc.memory, addr, size, EFI_BOOT_SERVICES_SIGNATURE)
@@ -1024,10 +1487,17 @@ class MinimalUefiFirmware:
             "SetVariable": self.variables.set_variable,
             "QueryVariableInfo": lambda attrs: (EFI_SUCCESS, 1 << 20, 1 << 20, 1024),
         }
+        vm_marshallers = {
+            "GetTime": self._efi_get_time,
+            "GetNextHighMonotonicCount": self._efi_get_next_monotonic_count,
+            "ResetSystem": self._efi_reset_system,
+        }
         for index, name in enumerate(_RUNTIME_SERVICE_NAMES):
             ptr = self._service_pointer(
                 "RuntimeServices." + name,
                 service_impls.get(name),
+                arity=_RUNTIME_SERVICE_ARITY.get(name, 0),
+                marshaller=vm_marshallers.get(name),
             )
             _write_u64(alloc.memory, addr + EFI_TABLE_HEADER_SIZE + index * 8, ptr)
         self._finalize_table(alloc.memory, addr, size, EFI_RUNTIME_SERVICES_SIGNATURE)
@@ -1042,8 +1512,21 @@ class MinimalUefiFirmware:
         fb_handle = self._new_handle(alloc, "framebuffer")
 
         con_in = alloc.alloc(24, 8)
-        _write_u64(memory, con_in, self._service_pointer("ConIn.Reset"))
-        _write_u64(memory, con_in + 8, self._service_pointer("ConIn.ReadKeyStroke", self.text_in.read_key_stroke))
+        _write_u64(
+            memory,
+            con_in,
+            self._service_pointer("ConIn.Reset", arity=2, marshaller=self._efi_noop_success),
+        )
+        _write_u64(
+            memory,
+            con_in + 8,
+            self._service_pointer(
+                "ConIn.ReadKeyStroke",
+                self.text_in.read_key_stroke,
+                arity=2,
+                marshaller=self._efi_read_key_stroke,
+            ),
+        )
         wait_event_status, wait_event = self.create_event(EVT_NOTIFY_WAIT)
         _write_u64(memory, con_in + 16, wait_event if wait_event_status == EFI_SUCCESS else 0)
         self.install_protocol(
@@ -1060,18 +1543,24 @@ class MinimalUefiFirmware:
         _write_u32(memory, con_out_mode + 20, 1)
         con_out = alloc.alloc(88, 8)
         names = [
-            ("Reset", None),
-            ("OutputString", self.text_out.output_string),
-            ("TestString", lambda text: EFI_SUCCESS),
-            ("QueryMode", None),
-            ("SetMode", None),
-            ("SetAttribute", None),
-            ("ClearScreen", None),
-            ("SetCursorPosition", None),
-            ("EnableCursor", None),
+            ("Reset", None, 2, self._efi_noop_success),
+            ("OutputString", self.text_out.output_string, 2, self._efi_output_string),
+            ("TestString", lambda text: EFI_SUCCESS, 2, self._efi_noop_success),
+            ("QueryMode", None, 4, None),
+            ("SetMode", None, 2, self._efi_noop_success),
+            ("SetAttribute", None, 2, self._efi_noop_success),
+            ("ClearScreen", None, 1, self._efi_noop_success),
+            ("SetCursorPosition", None, 3, self._efi_noop_success),
+            ("EnableCursor", None, 2, self._efi_noop_success),
         ]
-        for index, (name, fn) in enumerate(names):
-            _write_u64(memory, con_out + index * 8, self._service_pointer("ConOut." + name, fn))
+        for index, (name, fn, arity, marshaller) in enumerate(names):
+            _write_u64(
+                memory,
+                con_out + index * 8,
+                self._service_pointer(
+                    "ConOut." + name, fn, arity=arity, marshaller=marshaller
+                ),
+            )
         _write_u64(memory, con_out + 72, con_out_mode)
         self.install_protocol(
             con_out_handle,
@@ -1090,10 +1579,38 @@ class MinimalUefiFirmware:
             block = alloc.alloc(48, 8)
             _write_u64(memory, block, 0x00010000)
             _write_u64(memory, block + 8, media)
-            _write_u64(memory, block + 16, self._service_pointer("BlockIo.Reset"))
-            _write_u64(memory, block + 24, self._service_pointer("BlockIo.ReadBlocks", self.block_io.read_blocks))
-            _write_u64(memory, block + 32, self._service_pointer("BlockIo.WriteBlocks", self.block_io.write_blocks))
-            _write_u64(memory, block + 40, self._service_pointer("BlockIo.FlushBlocks", lambda: EFI_SUCCESS))
+            _write_u64(
+                memory,
+                block + 16,
+                self._service_pointer("BlockIo.Reset", arity=2, marshaller=self._efi_noop_success),
+            )
+            _write_u64(
+                memory,
+                block + 24,
+                self._service_pointer(
+                    "BlockIo.ReadBlocks",
+                    self.block_io.read_blocks,
+                    arity=5,
+                    marshaller=self._efi_block_read,
+                ),
+            )
+            _write_u64(
+                memory,
+                block + 32,
+                self._service_pointer(
+                    "BlockIo.WriteBlocks",
+                    self.block_io.write_blocks,
+                    arity=5,
+                    marshaller=self._efi_block_write,
+                ),
+            )
+            _write_u64(
+                memory,
+                block + 40,
+                self._service_pointer(
+                    "BlockIo.FlushBlocks", lambda: EFI_SUCCESS, arity=1, marshaller=self._efi_noop_success
+                ),
+            )
             self.install_protocol(block_handle, EFI_BLOCK_IO_PROTOCOL_GUID, block, self.block_io)
 
             simple_fs = alloc.alloc(16, 8)
@@ -1301,10 +1818,10 @@ class MinimalUefiFirmware:
             stack_args_addr=vm.sp,
         )
         if execute:
-            if self.apic is not None:
-                vm.execute_with_interrupts(self.apic, self.timer)
-            else:
-                vm.execute()
+            # The firmware run loop dispatches in-VM EFIAPI service calls (which
+            # target synthetic pointers outside RAM) instead of fetching them as
+            # bytecode, so it is the correct driver for any real EFI image.
+            self.run()
         return self.launch
 
 
@@ -1314,4 +1831,23 @@ def boot_uefi_app(
 ) -> Tuple[VirtualMachine, UefiLaunch, MinimalUefiFirmware]:
     firmware = MinimalUefiFirmware(**kwargs)
     launch = firmware.load_efi_app(app_image)
+    return launch.vm, launch, firmware
+
+
+def run_uefi_app(
+    app_image: Union[bytes, bytearray, StackVMExecutable],
+    *,
+    max_steps: int = 5_000_000,
+    **kwargs,
+) -> Tuple[VirtualMachine, UefiLaunch, MinimalUefiFirmware]:
+    """Load *app_image* under the minimal firmware and run it to completion,
+    dispatching its in-VM EFIAPI service calls.  Returns ``(vm, launch, firmware)``.
+
+    This is the standardized-boot entry point for both a Linux-style EFI-stub
+    kernel (which calls ``GetMemoryMap``/``ExitBootServices`` and continues) and a
+    GRUB-style EFI bootloader (which ``LoadImage``/``StartImage`` chain-loads the
+    next image)."""
+    firmware = MinimalUefiFirmware(**kwargs)
+    launch = firmware.load_efi_app(app_image)
+    firmware.run(max_steps=max_steps)
     return launch.vm, launch, firmware
