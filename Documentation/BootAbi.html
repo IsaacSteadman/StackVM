@@ -1,0 +1,288 @@
+<!doctype html>
+<html>
+  <head>
+    <title>StackVM Instruction Documentation | Boot ABI</title>
+    <link rel="stylesheet" type="text/css" href="DocStyle.css" />
+    <script type="text/javascript" src="darkModeHelper.js"></script>
+  </head>
+  <body>
+    <h1>StackVM Boot ABI</h1>
+    <p>
+      This document is the consolidated <em>boot contract</em> that an
+      out-of-tree kernel port (e.g. <code>arch/stackvm</code>) targets. It pulls
+      together, in one place, every interface a freestanding kernel image
+      depends on between power-on and a running multi-user system:
+    </p>
+    <ol>
+      <li><a href="#startupdata">The <code>StartupData</code> handoff</a> — what the firmware/emulator hands the kernel at entry.</li>
+      <li><a href="#paravirt">Paravirt hypercall numbers</a> — the phase-1 early-bringup device doorbell.</li>
+      <li><a href="#mmio">MMIO device map + IRQ assignments</a> — the phase-2 device window and interrupt lines.</li>
+      <li><a href="#interrupts">Exception / interrupt numbering</a> — the architectural vector table.</li>
+      <li><a href="#syscall">The syscall convention</a> — the user&rarr;kernel transition.</li>
+      <li><a href="#dynlink">The dynamic-linker ABI</a> — for dynamic userspace.</li>
+    </ol>
+    <p>
+      Each section below is a summary plus a pointer to the authoritative source
+      (header, module, or companion document). Where a numeric constant appears
+      here it is mirrored verbatim from the code; the test
+      <code>tests/test_boot_abi_doc.py</code> asserts the two stay in sync, so
+      this page is a checked contract rather than prose that can rot.
+    </p>
+
+    <h2>0. Boot machine state at kernel entry</h2>
+    <p>
+      The emulator's kernel launch path (<code>StackVM/boot.py</code>,
+      <code>boot_kernel</code>) is the counterpart of the user-program argv path
+      in <code>StackVM/runner.py</code>. It loads a flat kernel image at a
+      page-aligned <code>kernel_base</code> and enters it with:
+    </p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr><th>State</th><th>Value at entry</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Privilege level</td><td>kernel (priv 0); <code>FLAGS</code> bit 8 = 0</td></tr>
+        <tr><td>MMU</td><td>off (<code>VM_DISABLED</code>); physical == virtual</td></tr>
+        <tr><td>Interrupts</td><td>masked (<code>FLAGS</code> bit 14 = 0); priority field = 0xFF</td></tr>
+        <tr><td><code>ip</code></td><td><code>kernel_base</code> (start of the loaded image)</td></tr>
+        <tr><td><code>sp</code> / <code>bp</code></td><td>top of RAM (<code>vm_size</code>), growing down</td></tr>
+        <tr><td><a href="SYSREG.html">SVSR_SDP</a> (0x02)</td><td>physical address of a <code>struct StartupData</code></td></tr>
+        <tr><td><a href="SYSREG.html">SVSR_CORE_ID</a> (0x0A)</td><td><code>boot_core_id</code></td></tr>
+        <tr><td><a href="SYSREG.html">SVSR_KERNEL_SP/BP</a> (0x04/0x06)</td><td>top of RAM</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Two firmware/handoff variants build on the same entry state and are
+      documented separately: <a href="Uefi.html">UEFI / EFIAPI</a> (PE32+ EFI
+      images, including the EFI-stub and Multiboot2 hand-offs) and the
+      <a href="Devicetree.html">devicetree</a> hardware description.
+    </p>
+
+    <h2 id="startupdata">1. The <code>StartupData</code> handoff</h2>
+    <p>
+      <code>SVSR_SDP</code> points at a <code>struct StartupData</code>. All
+      pointers inside it are physical addresses (the MMU is off at entry). A
+      kernel must check <code>magic == SVSD_MAGIC</code> and read only fields
+      within <code>struct_size</code> (forward-compatible append-only growth).
+      Authoritative C definition:
+      <code>StackVM/include/stackvm_boot.h</code>; emulator-side
+      builder/parser: <code>StackVM/boot.py</code>.
+    </p>
+    <table class="Isaac-Table">
+      <thead>
+        <tr><th>Offset</th><th>Type</th><th>Field</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>0</td><td>u64</td><td>magic</td><td><code>SVSD_MAGIC</code> = little-endian "SVMBOOT1" = 0x31544F4F424D5653</td></tr>
+        <tr><td>8</td><td>u32</td><td>version</td><td><code>SVSD_VERSION</code> = 1</td></tr>
+        <tr><td>12</td><td>u32</td><td>flags</td><td><code>SVSD_FLAG_*</code> (bit 0 = <code>SVSD_FLAG_DTB</code>, the slim DTB-authoritative form)</td></tr>
+        <tr><td>16</td><td>u64</td><td>struct_size</td><td>bytes the loader wrote (= 104)</td></tr>
+        <tr><td>24</td><td>u64</td><td>core_count</td><td>online cores (&ge; 1)</td></tr>
+        <tr><td>32</td><td>u64</td><td>boot_core_id</td><td>core that entered the kernel</td></tr>
+        <tr><td>40</td><td>u64</td><td>mem_map</td><td>phys ptr to <code>MemMapEntry[mem_map_count]</code></td></tr>
+        <tr><td>48</td><td>u64</td><td>mem_map_count</td><td>number of memory-map entries</td></tr>
+        <tr><td>56</td><td>u64</td><td>initramfs_base</td><td>phys base of initramfs, or 0</td></tr>
+        <tr><td>64</td><td>u64</td><td>initramfs_size</td><td>initramfs size, or 0</td></tr>
+        <tr><td>72</td><td>u64</td><td>cmdline</td><td>phys ptr to NUL-terminated cmdline, or 0</td></tr>
+        <tr><td>80</td><td>u64</td><td>cmdline_size</td><td>cmdline length incl. NUL, or 0</td></tr>
+        <tr><td>88</td><td>u64</td><td>dtb</td><td>phys ptr to devicetree/boot-params blob, or 0</td></tr>
+        <tr><td>96</td><td>u64</td><td>dtb_size</td><td>blob size, or 0</td></tr>
+      </tbody>
+    </table>
+    <p>
+      <code>struct MemMapEntry</code> is 24 bytes:
+      <code>{ u64 base; u64 size; u32 type; u32 reserved; }</code>. The map tiles
+      <code>[0, total_ram)</code> exactly once — contiguous, sorted,
+      non-overlapping; gaps between reserved regions are reported as
+      <code>SVMEM_RAM</code>. Region types:
+    </p>
+    <table class="Isaac-Table">
+      <thead><tr><th>Value</th><th>Name</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>SVMEM_RAM</td><td>usable RAM, free for the kernel allocator</td></tr>
+        <tr><td>2</td><td>SVMEM_RESERVED</td><td>reserved firmware/low memory; do not allocate</td></tr>
+        <tr><td>3</td><td>SVMEM_KERNEL</td><td>occupied by the loaded kernel image</td></tr>
+        <tr><td>4</td><td>SVMEM_INITRAMFS</td><td>occupied by the initramfs blob</td></tr>
+        <tr><td>5</td><td>SVMEM_BOOTDATA</td><td>occupied by StartupData and its sub-tables</td></tr>
+      </tbody>
+    </table>
+    <p>
+      <strong>Slim / DTB-authoritative form</strong>
+      (<code>SVSD_FLAG_DTB</code>): the loader leaves
+      <code>mem_map</code>/<code>cmdline</code>/<code>initramfs_*</code>/<code>core_count</code>
+      zero and the kernel reads them from the devicetree at <code>dtb</code>
+      instead (arm64/RISC-V style). The initramfs <em>payload</em> stays resident.
+      See <a href="Devicetree.html">Devicetree.html</a>.
+    </p>
+
+    <h2 id="paravirt">2. Paravirt hypercall numbers</h2>
+    <p>
+      Before the MMIO device model is up, a guest kernel reaches host-backed
+      console/block/RTC/entropy services through a kernel-only doorbell:
+      <code>CALL_E</code> with <code>IS_SYS=0, IS_INT=1</code> and immediate
+      vector <code>INT_PARAVIRT</code> (0x12). This is deliberately separate from
+      <code>CALL_E/SYSCALL</code> (which is a user&rarr;kernel transition).
+      User-mode use of the doorbell raises <code>INT_PROTECT_FAULT</code>.
+      Source: <code>StackVM/paravirt.py</code> +
+      <code>StackVM/include/stackvm_boot.h</code>.
+    </p>
+    <p>
+      The frame at doorbell entry is six little-endian u64s on the guest stack:
+      <code>[sp+0]</code> hypercall number, <code>[sp+8]</code> arg byte count
+      (<code>SVMPV_ARG_BYTES</code> = 32), <code>[sp+16]</code> arg0,
+      <code>[sp+24]</code> arg1, <code>[sp+32]</code> arg2, <code>[sp+40]</code>
+      arg3 (also the return-value slot).
+    </p>
+    <table class="Isaac-Table">
+      <thead><tr><th>Number</th><th>Name</th><th>Args &rarr; result</th></tr></thead>
+      <tbody>
+        <tr><td>0x00</td><td>CONSOLE_WRITE</td><td>(buf, len) &rarr; bytes written</td></tr>
+        <tr><td>0x01</td><td>CONSOLE_READ</td><td>(buf, len) &rarr; bytes read</td></tr>
+        <tr><td>0x02</td><td>BLOCK_READ</td><td>(dev, offset, buf, len) &rarr; bytes</td></tr>
+        <tr><td>0x03</td><td>BLOCK_WRITE</td><td>(dev, offset, buf, len) &rarr; bytes</td></tr>
+        <tr><td>0x04</td><td>RTC_NOW_NS</td><td>() &rarr; Unix time in nanoseconds</td></tr>
+        <tr><td>0x05</td><td>ENTROPY</td><td>(buf, len, flags=0) &rarr; bytes</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Errors are returned in the result slot as negative-errno u64s:
+      <code>EIO</code> = -5, <code>ENODEV</code> = -19, <code>EINVAL</code> = -22,
+      <code>ENOSPC</code> = -28, <code>ENOSYS</code> = -38.
+    </p>
+
+    <h2 id="mmio">3. MMIO device map + IRQ assignments</h2>
+    <p>
+      Phase-2 devices live in a physical MMIO window; accesses there dispatch to
+      host-backed device models instead of RAM. Source:
+      <code>StackVM/include/stackvm_mmio.h</code> + <code>StackVM/mmio.py</code>.
+      The base window is <code>SVM_MMIO_BASE</code> = 0xFFFF0000, with 0x1000-byte
+      device slots:
+    </p>
+    <table class="Isaac-Table">
+      <thead><tr><th>Physical base</th><th>Device</th><th>IRQ line</th></tr></thead>
+      <tbody>
+        <tr><td>0xFFFF0000</td><td>UART0 (serial console)</td><td>SVM_IRQ_UART0 = 1</td></tr>
+        <tr><td>0xFFFF1000</td><td>Interrupt controller</td><td>&mdash;</td></tr>
+        <tr><td>0xFFFF2000</td><td>RTC</td><td>SVM_IRQ_RTC = 3</td></tr>
+        <tr><td>0xFFFF3000</td><td>virtio-blk0</td><td>SVM_IRQ_VIRTIO_BLK0 = 2</td></tr>
+        <tr><td>0xFFFF4000</td><td>virtio-net0</td><td>SVM_IRQ_VIRTIO_NET0 = 4</td></tr>
+        <tr><td>0xFFFF5000</td><td>simple-framebuffer (regs)</td><td>&mdash;</td></tr>
+        <tr><td>0xFFFF0000+0x100000</td><td>framebuffer pixel aperture</td><td>&mdash;</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Device IRQ lines are raised into the MMIO interrupt controller
+      (pending/enable/claim/EOI/route/priority registers at
+      <code>SVM_IC_*</code> offsets), which routes an enabled line to an
+      architectural vector — by default <code>INT_HW_IO</code> (0x10) — and
+      delivers it through the asynchronous interrupt gate (FLAGS enable +
+      priority). The UART exposes <code>DATA</code>/<code>STATUS</code>/
+      <code>IRQ_ENABLE</code>/<code>IRQ_STATUS</code>/<code>IRQ_ACK</code>;
+      virtio devices use the compact virtio-MMIO transport
+      (<code>MAGIC</code>=0x74726976, version 2, device ids: net=1, block=2).
+      Register-level offsets are in <code>stackvm_mmio.h</code>. See also
+      <a href="Devicetree.html">Devicetree.html</a> for how these windows and IRQs
+      are enumerated to the kernel as DT nodes.
+    </p>
+
+    <h2 id="interrupts">4. Exception / interrupt numbering</h2>
+    <p>
+      The architectural 256-entry vector table is documented in full in
+      <a href="Interrupts.html">Interrupts.html</a>. The boot-relevant vectors:
+    </p>
+    <table class="Isaac-Table">
+      <thead><tr><th>Vector</th><th>Name</th><th>Class</th></tr></thead>
+      <tbody>
+        <tr><td>0x00</td><td>DIV_BY_ZERO</td><td>fault</td></tr>
+        <tr><td>0x02</td><td>NMI</td><td>non-maskable</td></tr>
+        <tr><td>0x06</td><td>INVAL_OPCODE</td><td>fault</td></tr>
+        <tr><td>0x08</td><td>DOUBLE_FAULT</td><td>fault</td></tr>
+        <tr><td>0x0D</td><td>PROTECT_FAULT</td><td>fault (perms/privilege)</td></tr>
+        <tr><td>0x0E</td><td>PAGE_FAULT</td><td>fault (not present)</td></tr>
+        <tr><td>0x0F</td><td>INVAL_SYSCALL</td><td>fault</td></tr>
+        <tr><td>0x10</td><td>HW_IO</td><td>async (default MMIO device line)</td></tr>
+        <tr><td>0x11</td><td>TIMER</td><td>async (scheduler tick)</td></tr>
+        <tr><td>0x12</td><td>PARAVIRT</td><td>synchronous host doorbell (kernel-only)</td></tr>
+        <tr><td>0x1E</td><td>TLB_SHOOTDOWN_DONE</td><td>async (shootdown completion)</td></tr>
+        <tr><td>0x1F</td><td>TLB_SHOOTDOWN</td><td>async (remote-int shootdown request)</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Handlers are looked up in the 16-byte-per-entry ISR table at
+      <a href="SYSREG.html">SVSR_ISR</a> (0x01): <code>[u64 isr_flags][u64
+      handler_addr]</code>. On entry the processor builds a 48-byte v3 frame on
+      the kernel stack (<code>int_num</code>, <code>error_code</code>,
+      <code>saved_flags</code>, <code>user_bp</code>, <code>user_sp</code>,
+      <code>user_ip</code>) and applies <code>isr_flags</code>; <code>IRET</code>
+      (<code>RET_E</code> with <code>IS_SYS|IS_INT</code>) unwinds it. Carried
+      arguments arrive in the read-only kernel registers
+      <code>SVSR_INT_ARG0..3</code> (0x0E..0x11); page/protect faults also report
+      the faulting address (see <code>SVSR_PAGE_FAULT_ADDR</code>, 0x0D, and the
+      PAGE_FAULT/PROTECT_FAULT argument columns in
+      <a href="Interrupts.html">Interrupts.html</a>). Asynchronous delivery,
+      enable-gating, priority masking and the NMI path are specified in
+      <a href="stack_vm.md">stack_vm.md</a> ("Asynchronous interrupt delivery").
+      TLB maintenance / shootdown is specified in
+      <a href="TlbShootdown.html">TlbShootdown.html</a> and
+      <a href="INVTLB.html">INVTLB.html</a>.
+    </p>
+
+    <h2 id="syscall">5. Syscall convention</h2>
+    <p>
+      User code enters the kernel with <code>CALL_E</code> using
+      <code>IS_SYS=1</code> (full instruction reference:
+      <a href="CALL_E.html">CALL_E.html</a>; the return is
+      <a href="RET_E.html">RET_E.html</a>). The caller pushes, in order, the
+      argument bytes, an 8-byte byte-count <code>num</code>, and the syscall
+      number; the byte after the opcode encodes the syscall-number size class.
+      On the transition the processor switches to the kernel stack, decrements the
+      privilege level, and the handler sees on its stack:
+    </p>
+    <ul>
+      <li>syscall number (u64)</li>
+      <li>number of argument bytes passed (u64)</li>
+      <li>the argument bytes copied from the caller's stack</li>
+      <li>saved <code>prev_bp</code>, <code>prev_ip</code></li>
+    </ul>
+    <p>
+      <code>bp == sp</code> on handler entry. The dispatch target is the kernel
+      syscall entry in <a href="SYSREG.html">SVSR_SYS_FN</a> (0x03); an
+      unrecognised number raises <code>INT_INVAL_SYSCALL</code> (0x0F). This is
+      distinct from the paravirt doorbell in §2, which is the kernel's path to the
+      host, not userspace's path to the kernel.
+    </p>
+
+    <h2 id="dynlink">6. Dynamic-linker ABI</h2>
+    <p>
+      The interchange object/executable format is ELF64 little-endian with
+      machine type <code>EM_STACKVM</code> = 0x5356. Static relocations:
+      <code>R_STACKVM_NONE</code>=0, <code>R_STACKVM_64</code>=1,
+      <code>R_STACKVM_PC64</code>=2, <code>R_STACKVM_RELATIVE</code>=3. Dynamic
+      relocations: <code>R_STACKVM_GLOB_DAT</code>=4,
+      <code>R_STACKVM_JUMP_SLOT</code>=5, <code>R_STACKVM_COPY</code>=6. The full
+      PLT/GOT + loader contract, the <code>DT_*</code> tag set and the
+      <code>-shared</code>/<code>-pie</code> (<code>ET_DYN</code>,
+      <code>DF_1_PIE</code>) image layout are specified in
+      <a href="DynamicLinking.html">DynamicLinking.html</a>. The UEFI/PE32+ image
+      path (machine <code>IMAGE_FILE_MACHINE_STACKVM</code> = 0x5356, base
+      relocations) is in <a href="Uefi.html">Uefi.html</a>.
+    </p>
+    <p>
+      <em>Status:</em> the toolchain emits all of the above (objects, executables,
+      shared/PIE images, dynamic tables). The compiler's <code>-fPIC</code>
+      GOT/PLT code generation and the in-emulator runtime loader are scheduled
+      with the dynamic-userspace milestone; this ABI is the target they build to.
+    </p>
+
+    <h2>Related documents</h2>
+    <ul>
+      <li><a href="stack_vm.md">stack_vm.md</a> — ISA overview, async interrupt delivery, timer, MMIO note</li>
+      <li><a href="SYSREG.html">SYSREG.html</a> — system-register reference</li>
+      <li><a href="Interrupts.html">Interrupts.html</a> — full interrupt/exception table</li>
+      <li><a href="Devicetree.html">Devicetree.html</a> — devicetree bindings</li>
+      <li><a href="Uefi.html">Uefi.html</a> — UEFI / EFIAPI / Multiboot2 hand-offs</li>
+      <li><a href="DynamicLinking.html">DynamicLinking.html</a> — dynamic-linker ABI</li>
+      <li><a href="TlbShootdown.html">TlbShootdown.html</a> / <a href="INVTLB.html">INVTLB.html</a> — TLB maintenance &amp; shootdown</li>
+    </ul>
+  </body>
+</html>

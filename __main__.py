@@ -8,6 +8,7 @@ Invocable as::
     python -m IsaacCompiler.StackVM boot  vmlinux.bin [--cmdline ...]
     python -m IsaacCompiler.StackVM uefi  app.efi [--cmdline ...]
     python -m IsaacCompiler.StackVM multiboot2 kernel.bin [--module initrd ...]
+    python -m IsaacCompiler.StackVM milestones [N]
 
 run
 ---
@@ -347,6 +348,21 @@ _mb2_parser.add_argument(
     help="launch the interactive debugger instead of running to completion",
 )
 
+# ---------------------------------------------------------------------------
+# 'milestones' subcommand
+# ---------------------------------------------------------------------------
+_ms_parser = _subparsers.add_parser(
+    "milestones",
+    help="run the E2 phased boot/runtime milestone mini-kernels",
+)
+_ms_parser.add_argument(
+    "number",
+    nargs="?",
+    type=int,
+    default=None,
+    help="run only this milestone (1-8); default: run all",
+)
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -499,6 +515,31 @@ def _main() -> None:
         )
         if isinstance(firmware.console_output, bytearray) and firmware.console_output:
             sys.stdout.buffer.write(firmware.console_output)
+
+    elif args.subcommand == "milestones":
+        from .milestones import run_all_milestones, run_milestone
+
+        try:
+            results = (
+                [run_milestone(args.number)]
+                if args.number is not None
+                else run_all_milestones()
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+        failed = 0
+        for result in results:
+            status = "PASS" if result.passed else "FAIL"
+            print(f"[{status}] milestone {result.number}: {result.name}")
+            if not result.passed:
+                failed += 1
+                for key, value in result.detail.items():
+                    print(f"        {key} = {value!r}")
+        print(f"\n{len(results) - failed}/{len(results)} milestones passed")
+        if failed:
+            raise SystemExit(1)
 
     elif args.subcommand == "run":
         program_args: list[str] = args.program_args
